@@ -25,6 +25,18 @@ export const metadata: Metadata = {
   title: "TCT MultiStream — Multi-YouTube Live Stream Command Center",
   description:
     "Watch multiple YouTube live streams simultaneously with customizable theater grids, solo audio focus, live chat sidebar, and cloud-saved layouts powered by Neon & Prisma ORM.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png", sizes: "32x32" },
+      { url: "/logo.png", type: "image/png", sizes: "512x512" },
+      { url: "/logo.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: [
+      { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 };
 
 export default function RootLayout({

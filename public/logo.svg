@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Circular Dark Disc Backing for universal contrast across light and dark tab headers -->
+  <circle cx="256" cy="256" r="220" fill="#090E0C" />
+  <!-- Outer Emerald Ring -->
+  <circle cx="256" cy="256" r="220" stroke="#34D399" stroke-width="22" />
+  <!-- Left Antenna -->
+  <line x1="253" y1="195" x2="198" y2="140" stroke="#34D399" stroke-width="22" stroke-linecap="round" />
+  <!-- Right Antenna -->
+  <line x1="259" y1="195" x2="314" y2="140" stroke="#34D399" stroke-width="22" stroke-linecap="round" />
+  <!-- TV Body -->
+  <rect x="133" y="190" width="246" height="180" rx="42" stroke="#34D399" stroke-width="22" />
+</svg>
