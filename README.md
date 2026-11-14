@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TCT MultiStream — Multi-YouTube Live Stream Viewer
+
+An all-in-one **Multi-YouTube Live Stream Command Center** built with **Next.js (App Router)**, **TypeScript**, **Tailwind CSS + Shadcn UI**, **Zustand**, **Better Auth**, and **Neon Serverless PostgreSQL + Prisma ORM**.
+
+## Features
+
+- **Flexible YouTube URL & Video ID Parser:** Paste standard `youtube.com/watch?v=`, live `youtube.com/live/`, shortened `youtu.be/`, embed URLs, or raw 11-character Video IDs with instant regex validation and Toast notifications.
+- **Dynamic Theater Grid Engine (`h-[calc(100vh-4rem)]`):**
+  - `1x1` — Single Focus
+  - `1x2` — Side-by-Side Split
+  - `2x2` — Quad View
+  - `1+3` — 1 Large Main Stage + 3 Stacked Side Streams
+  - `3x3` — 9-Stream Command Center
+- **Smart Audio & Stream Controls:**
+  - **Solo Audio Toggle:** Uses the YouTube IFrame Player API (`postMessage`) to unmute one stream and automatically mute all others without reloading iframes.
+  - **Swap to Main:** Promote any secondary stream to the primary slot (`#1`).
+  - **Chat Focus:** Switch the collapsible Live Chat sidebar to any active stream.
+  - **Global Mute All:** Mute all active streams from the top bar.
+- **Collapsible Live Chat Sidebar:** Embeds official YouTube Live Chat (`https://www.youtube.com/live_chat?v={VIDEO_ID}&embed_domain={DOMAIN}`) with a stream selector dropdown.
+- **Cloud Persistence & Read-Only Sharing (Neon + Prisma ORM):**
+  - Save custom layouts (`title`, `gridPreset`, `streams`, `isPublic`) to Neon PostgreSQL.
+  - Share public layouts via `/watch/[layoutId]`.
 
 ## Getting Started
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Install dependencies:
+   ```bash
+   bun install
+   ```
+2. Configure `.env` (see `.env.example`):
+   ```bash
+   cp .env.example .env
+   ```
+3. Generate Prisma Client & sync schema to Neon PostgreSQL:
+   ```bash
+   bun run db:generate
+   bun run db:push
+   ```
+4. Start the development server:
+   ```bash
+   bun run dev
+   ```
