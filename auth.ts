@@ -13,9 +13,45 @@ export const isGitHubAuthEnabled = Boolean(
   githubClientId && githubClientSecret
 );
 
+function normalizeUrl(rawUrl?: string): string | undefined {
+  const trimmed = rawUrl?.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  const isLocal =
+    trimmed.startsWith("localhost") || trimmed.startsWith("127.0.0.1");
+  return `${isLocal ? "http" : "https"}://${trimmed}`;
+}
+
+const resolvedBaseUrl =
+  normalizeUrl(process.env.BETTER_AUTH_URL) ||
+  normalizeUrl(process.env.NEXT_PUBLIC_APP_URL) ||
+  normalizeUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL) ||
+  normalizeUrl(process.env.VERCEL_URL) ||
+  "http://localhost:3000";
+
+if (
+  process.env.BETTER_AUTH_URL &&
+  process.env.BETTER_AUTH_URL !== resolvedBaseUrl
+) {
+  process.env.BETTER_AUTH_URL = resolvedBaseUrl;
+}
+
+const trustedOrigins = Array.from(
+  new Set(
+    [
+      resolvedBaseUrl,
+      normalizeUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL),
+      normalizeUrl(process.env.VERCEL_URL),
+    ].filter((url): url is string => Boolean(url))
+  )
+);
+
 export const auth = betterAuth({
   appName: "TCT MultiStream",
-  baseURL: process.env.BETTER_AUTH_URL,
+  baseURL: resolvedBaseUrl,
+  trustedOrigins,
   secret: process.env.BETTER_AUTH_SECRET || process.env.AUTH_SECRET,
   database: prismaAdapter(prisma, {
     provider: "postgresql",
