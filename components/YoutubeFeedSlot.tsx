@@ -275,11 +275,7 @@ export function YoutubeFeedSlot({
   // Google OAuth Sign-in Handler (Prompt user with YouTube permissions)
   const handleGoogleSignIn = async () => {
     if (!authStatus.isGoogleConfigured) {
-      toast.info("Google OAuth Setup Needed", {
-        description:
-          "To link your personal YouTube account, add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your .env file with YouTube scope enabled in Google Cloud Console.",
-        duration: 6000,
-      });
+      toast.info("Google sign-in is not enabled on this deployment.");
       return;
     }
 
@@ -514,7 +510,7 @@ export function YoutubeFeedSlot({
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : (
+          ) : authStatus.isGoogleConfigured ? (
             /* Optional Google Sign-in button */
             <button
               type="button"
@@ -530,7 +526,7 @@ export function YoutubeFeedSlot({
               )}
               <span className="hidden sm:inline">Sign in</span>
             </button>
-          )}
+          ) : null}
 
           {/* Refresh Button */}
           <button
@@ -627,6 +623,7 @@ export function YoutubeFeedSlot({
 
       {/* ── Banner: Signed in but missing YouTube permissions ── */}
       {authStatus.isLoggedIn &&
+        authStatus.isGoogleConfigured &&
         !authStatus.hasYouTubeScope &&
         !dismissBanner && (
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-900/60 bg-amber-950/30 px-3 py-1.5 text-[11px] text-amber-200">
@@ -661,7 +658,9 @@ export function YoutubeFeedSlot({
         )}
 
       {/* ── Optional Google Sign-In Banner for Guest / Not Logged In ── */}
-      {!authStatus.isLoggedIn && !dismissBanner && (
+      {!authStatus.isLoggedIn &&
+        authStatus.isGoogleConfigured &&
+        !dismissBanner && (
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800/60 bg-zinc-900/50 px-3 py-1.5 text-[11px] text-zinc-400">
           <div className="flex items-center gap-1.5 truncate">
             <GoogleIcon className="size-3 shrink-0" />
