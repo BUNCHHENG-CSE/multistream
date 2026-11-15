@@ -728,19 +728,19 @@ export function YoutubeFeedSlot({
         </div>
       )}
 
-      {/* ── YouTube Video Grid (Smooth Infinite Scroll) ── */}
+      {/* ── YouTube Video Grid (Smooth Infinite Scroll & Responsive Auto-Fit) ── */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto overscroll-contain px-3 py-4 [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.700)_transparent]"
+        className="flex-1 overflow-y-auto overscroll-contain px-2.5 sm:px-3 py-3 sm:py-4 [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.700)_transparent]"
       >
         {isLoading && videos.length === 0 ? (
           /* Initial Loading Skeletons */
-          <div className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-3 sm:gap-x-4 gap-y-5 sm:gap-y-6">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex flex-col gap-2.5 animate-pulse">
                 <div className="aspect-video w-full rounded-xl bg-zinc-800/80" />
                 <div className="flex gap-2.5">
-                  <div className="size-9 rounded-full bg-zinc-800 shrink-0" />
+                  <div className="size-8 sm:size-9 rounded-full bg-zinc-800 shrink-0" />
                   <div className="flex-1 space-y-1.5 pt-1">
                     <div className="h-3 w-4/5 rounded bg-zinc-800" />
                     <div className="h-2.5 w-1/2 rounded bg-zinc-800/80" />
@@ -772,8 +772,8 @@ export function YoutubeFeedSlot({
             </button>
           </div>
         ) : (
-          /* Real YouTube Cards Grid */
-          <div className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
+          /* Real YouTube Cards Grid - Fully Responsive */
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-3 sm:gap-x-4 gap-y-5 sm:gap-y-6">
             {videos.map((video) => {
               const inGrid = activeIds.has(video.videoId);
               return (
@@ -800,14 +800,14 @@ export function YoutubeFeedSlot({
                     />
 
                     {/* Duration / LIVE Badge */}
-                    <div className="absolute bottom-2 right-2 z-10">
+                    <div className="absolute bottom-1.5 right-1.5 sm:bottom-2 sm:right-2 z-10">
                       {video.isLive ? (
-                        <span className="flex items-center gap-1 rounded bg-red-600/95 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white uppercase shadow-sm">
+                        <span className="flex items-center gap-1 rounded bg-red-600/95 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold tracking-wider text-white uppercase shadow-sm">
                           <span className="size-1.5 rounded-full bg-white animate-pulse" />
                           LIVE
                         </span>
                       ) : video.duration ? (
-                        <span className="rounded bg-black/85 px-1.5 py-0.5 text-[11px] font-medium text-white shadow-sm">
+                        <span className="rounded bg-black/85 px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium text-white shadow-sm">
                           {video.duration}
                         </span>
                       ) : null}
@@ -815,23 +815,23 @@ export function YoutubeFeedSlot({
 
                     {/* Hover Overlay with Play Button */}
                     <div className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity duration-200 group-hover/card:opacity-100">
-                      <div className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-zinc-950 shadow-lg transform translate-y-1 group-hover/card:translate-y-0 transition-transform">
-                        <Play className="size-3.5 fill-current" />
+                      <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1 sm:px-3.5 sm:py-1.5 text-xs font-bold text-zinc-950 shadow-lg transform translate-y-1 group-hover/card:translate-y-0 transition-transform">
+                        <Play className="size-3 sm:size-3.5 fill-current" />
                         <span>{inGrid ? "Already Playing" : "Play in Slot"}</span>
                       </div>
                     </div>
 
                     {inGrid && (
-                      <div className="absolute top-2 left-2 z-10 rounded-md bg-emerald-600/90 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white uppercase shadow-xs">
+                      <div className="absolute top-1.5 left-1.5 sm:top-2 sm:left-2 z-10 rounded-md bg-emerald-600/90 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white uppercase shadow-xs">
                         In Grid
                       </div>
                     )}
                   </div>
 
                   {/* Metadata Row: Avatar + Details + Menu */}
-                  <div className="mt-2.5 flex items-start gap-2.5">
+                  <div className="mt-2 sm:mt-2.5 flex items-start gap-2 sm:gap-2.5">
                     {/* Channel Avatar */}
-                    <div className="size-9 shrink-0 overflow-hidden rounded-full bg-zinc-800 ring-1 ring-zinc-800">
+                    <div className="size-8 sm:size-9 shrink-0 overflow-hidden rounded-full bg-zinc-800 ring-1 ring-zinc-800">
                       {video.channelAvatar ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -854,27 +854,27 @@ export function YoutubeFeedSlot({
                     {/* Details: Title, Channel, Views, Time */}
                     <div className="min-w-0 flex-1">
                       <h3
-                        className="line-clamp-2 text-xs font-semibold leading-snug text-zinc-100 group-hover/card:text-white transition-colors"
+                        className="line-clamp-2 text-xs sm:text-[13px] font-semibold leading-snug text-zinc-100 group-hover/card:text-white transition-colors"
                         title={video.title}
                       >
                         {video.title}
                       </h3>
 
-                      <div className="mt-1 flex items-center gap-1 text-[11px] text-zinc-400 group-hover/card:text-zinc-300">
+                      <div className="mt-0.5 sm:mt-1 flex items-center gap-1 text-[11px] text-zinc-400 group-hover/card:text-zinc-300 truncate">
                         <span className="truncate">{video.channelName}</span>
                       </div>
 
-                      <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-zinc-400">
+                      <div className="mt-0.5 flex items-center gap-1 text-[10px] sm:text-[11px] text-zinc-400 whitespace-nowrap overflow-hidden text-ellipsis">
                         {video.isLive ? (
-                          <span className="font-semibold text-red-400">
+                          <span className="font-semibold text-red-400 shrink-0">
                             {video.views || "Streaming now"}
                           </span>
                         ) : (
-                          <>
-                            {video.views && <span>{video.views}</span>}
-                            {video.views && video.published && <span>•</span>}
-                            {video.published && <span>{video.published}</span>}
-                          </>
+                          <span className="truncate">
+                            {[video.views, video.published]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -886,7 +886,7 @@ export function YoutubeFeedSlot({
                         e.stopPropagation();
                         handleVideoClick(video);
                       }}
-                      className="opacity-0 group-hover/card:opacity-100 p-1 text-zinc-400 hover:text-white transition"
+                      className="opacity-0 group-hover/card:opacity-100 p-1 text-zinc-400 hover:text-white transition shrink-0"
                     >
                       <Plus className="size-4" />
                     </button>
