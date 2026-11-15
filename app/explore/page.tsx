@@ -1,7 +1,59 @@
 import { Suspense } from "react";
+import type { Metadata } from "next";
 import { Compass, Radio } from "lucide-react";
 import { getPublicCommunityLayouts } from "@/actions/layouts";
 import { ExploreGallery } from "@/components/ExploreGallery";
+import { siteConfig } from "@/lib/seo";
+
+export const metadata: Metadata = {
+  title: "Explore Community Stream Walls & MultiView Presets",
+  description:
+    "Discover and launch curated multi-YouTube live stream walls created by the community. Browse esports multiview setups, 24/7 space and earth cams, lofi beats, and breaking news command centers.",
+  keywords: [
+    "explore multistream layouts",
+    "community stream walls",
+    "youtube multiview presets",
+    "curated live streams",
+    "multi camera streams",
+    "public stream grids",
+    "watch party presets",
+  ],
+  alternates: {
+    canonical: "/explore",
+  },
+  openGraph: {
+    type: "website",
+    url: `${siteConfig.url}/explore`,
+    title: "Explore Community Stream Walls & MultiView Presets | TCT MultiStream",
+    description:
+      "Discover and launch curated multi-YouTube live stream walls created by the community. Browse esports multiview setups, 24/7 space and earth cams, and breaking news command centers.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Explore Community Stream Walls & MultiView Presets | TCT MultiStream",
+    description:
+      "Discover and launch curated multi-YouTube live stream walls created by the community.",
+  },
+};
+
+const breadcrumbJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "Home",
+      item: siteConfig.url,
+    },
+    {
+      "@type": "ListItem",
+      position: 2,
+      name: "Explore Stream Walls",
+      item: `${siteConfig.url}/explore`,
+    },
+  ],
+};
 
 async function ExploreContent() {
   const result = await getPublicCommunityLayouts();
@@ -25,8 +77,16 @@ function ExploreLoadingFallback() {
 
 export default function ExplorePage() {
   return (
-    <Suspense fallback={<ExploreLoadingFallback />}>
-      <ExploreContent />
-    </Suspense>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(breadcrumbJsonLd),
+        }}
+      />
+      <Suspense fallback={<ExploreLoadingFallback />}>
+        <ExploreContent />
+      </Suspense>
+    </>
   );
 }

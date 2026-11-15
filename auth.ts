@@ -13,6 +13,15 @@ export const isGitHubAuthEnabled = Boolean(
   githubClientId && githubClientSecret
 );
 
+const googleClientId =
+  process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID;
+const googleClientSecret =
+  process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET;
+
+export const isGoogleAuthEnabled = Boolean(
+  googleClientId && googleClientSecret
+);
+
 function normalizeUrl(rawUrl?: string): string | undefined {
   const trimmed = rawUrl?.trim();
   if (!trimmed) return undefined;
@@ -29,7 +38,9 @@ const resolvedBaseUrl =
   normalizeUrl(process.env.NEXT_PUBLIC_APP_URL) ||
   normalizeUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL) ||
   normalizeUrl(process.env.VERCEL_URL) ||
-  "http://localhost:3000";
+  (process.env.NODE_ENV === "production"
+    ? "https://tct-multistream.vercel.app"
+    : "http://localhost:3000");
 
 if (
   process.env.BETTER_AUTH_URL &&
@@ -42,6 +53,7 @@ const trustedOrigins = Array.from(
   new Set(
     [
       resolvedBaseUrl,
+      "https://tct-multistream.vercel.app",
       normalizeUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL),
       normalizeUrl(process.env.VERCEL_URL),
     ].filter((url): url is string => Boolean(url))
@@ -60,16 +72,27 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
   },
-  ...(githubClientId && githubClientSecret
-    ? {
-        socialProviders: {
+  socialProviders: {
+    ...(githubClientId && githubClientSecret
+      ? {
           github: {
             clientId: githubClientId,
             clientSecret: githubClientSecret,
           },
-        },
-      }
-    : {}),
+        }
+      : {}),
+    ...(googleClientId && googleClientSecret
+      ? {
+          google: {
+            clientId: googleClientId,
+            clientSecret: googleClientSecret,
+            scope: ["https://www.googleapis.com/auth/youtube.readonly"],
+            accessType: "offline",
+            prompt: "consent",
+          },
+        }
+      : {}),
+  },
   session: {
     cookieCache: {
       enabled: true,

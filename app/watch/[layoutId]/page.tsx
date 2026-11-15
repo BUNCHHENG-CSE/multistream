@@ -1,9 +1,68 @@
 import { Suspense } from "react";
+import type { Metadata } from "next";
 import { connection } from "next/server";
 import Link from "next/link";
 import { Tv, ArrowLeft, Lock, Radio } from "lucide-react";
 import { getPublicLayout } from "@/actions/layouts";
 import { SharedLayoutViewer } from "@/components/SharedLayoutViewer";
+import { siteConfig } from "@/lib/seo";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ layoutId: string }>;
+}): Promise<Metadata> {
+  const { layoutId } = await params;
+  const result = await getPublicLayout(layoutId);
+
+  if (!result.success) {
+    return {
+      title: "Shared Layout Unavailable",
+      description:
+        "The requested multi-stream layout is private or does not exist.",
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
+  }
+
+  const layout = result.data;
+  const streamCount = layout.streams.length;
+  const channelNames = layout.streams
+    .map((s) => s.label)
+    .filter(Boolean)
+    .slice(0, 4)
+    .join(", ");
+
+  const description = `Watch ${streamCount} synchronized live stream${
+    streamCount > 1 ? "s" : ""
+  } (${channelNames}) in ${layout.gridPreset} multi-view with solo audio switching and YouTube live chat. Curated by ${
+    layout.authorName || "Anonymous Director"
+  }.`;
+
+  const canonicalUrl = `${siteConfig.url}/watch/${layoutId}`;
+
+  return {
+    title: `${layout.title} — Multi-Stream View`,
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      type: "video.other",
+      url: canonicalUrl,
+      title: `${layout.title} — Multi-Stream View | TCT MultiStream`,
+      description,
+      siteName: siteConfig.name,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${layout.title} — Multi-Stream View`,
+      description,
+    },
+  };
+}
 
 async function SharedLayoutContent({
   params,
@@ -39,7 +98,42 @@ async function SharedLayoutContent({
     );
   }
 
-  return <SharedLayoutViewer layout={result.data} />;
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Home",
+        item: siteConfig.url,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "Explore Stream Walls",
+        item: `${siteConfig.url}/explore`,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: result.data.title,
+        item: `${siteConfig.url}/watch/${layoutId}`,
+      },
+    ],
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(breadcrumbJsonLd),
+        }}
+      />
+      <SharedLayoutViewer layout={result.data} />
+    </>
+  );
 }
 
 function SharedLayoutLoadingFallback() {

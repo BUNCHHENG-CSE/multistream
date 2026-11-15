@@ -71,6 +71,7 @@ import {
   type YouTubeQualityLevel,
 } from "@/lib/youtube";
 import { useStreamStore, type StreamItem } from "@/store/useStreamStore";
+import { YoutubeFeedSlot } from "@/components/YoutubeFeedSlot";
 import { cn } from "@/lib/utils";
 
 const emptySubscribe = () => () => {};
@@ -115,6 +116,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
     useState<YouTubeQualityLevel>("auto");
   const [reportedQuality, setReportedQuality] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isBrowsingYouTube, setIsBrowsingYouTube] = useState(false);
 
   const embedDomain = useSyncExternalStore(
     emptySubscribe,
@@ -645,6 +647,22 @@ export const StreamPlayer = React.memo(function StreamPlayer({
     }
   };
 
+  if (isBrowsingYouTube) {
+    return (
+      <div className="relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-zinc-800 bg-[#0f0f0f]">
+        <YoutubeFeedSlot
+          slotIndex={index}
+          onClose={() => setIsBrowsingYouTube(false)}
+          onSelectVideo={(newId, newTitle) => {
+            replaceStream(stream.videoId, newId, newTitle);
+            setIsBrowsingYouTube(false);
+            toast.success(`Switched to "${newTitle}"`);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       onMouseEnter={handleTileMouseEnter}
@@ -1100,6 +1118,69 @@ export const StreamPlayer = React.memo(function StreamPlayer({
 
                 <DropdownMenuSeparator className="my-1 bg-white/10" />
 
+                {gridPreset === "1x2" && (
+                  <>
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                        Screen Sizing (1x2 Split)
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          const target = index === 0 ? 65 : 35;
+                          useStreamStore.getState().setSplit1x2Ratio(target);
+                          toast.success(`Enlarged ${stream.label} to 65%`);
+                        }}
+                        className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-emerald-300 focus:bg-emerald-500/15 focus:text-emerald-200"
+                      >
+                        <Maximize2 className="size-3.5 text-emerald-400" />
+                        <span>Enlarge Screen (65% Focus)</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          useStreamStore.getState().setSplit1x2Ratio(50);
+                          toast.info("Equalized dual screens (50:50)");
+                        }}
+                        className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs text-zinc-300 focus:bg-white/10 focus:text-white"
+                      >
+                        <RotateCcw className="size-3.5 text-zinc-400" />
+                        <span>Equalize Screens (50:50)</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator className="my-1 bg-white/10" />
+                  </>
+                )}
+
+                {gridPreset === "1+3" && (
+                  <>
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                        Stage Sizing (1+3)
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          useStreamStore.getState().setMainStageRatio(80);
+                          toast.success("Enlarged Main Stage to 80%");
+                        }}
+                        className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-emerald-300 focus:bg-emerald-500/15 focus:text-emerald-200"
+                      >
+                        <Maximize2 className="size-3.5 text-emerald-400" />
+                        <span>Enlarge Main Stage (80%)</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          useStreamStore.getState().setMainStageRatio(70);
+                          toast.info("Reset Main Stage to 70%");
+                        }}
+                        className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs text-zinc-300 focus:bg-white/10 focus:text-white"
+                      >
+                        <RotateCcw className="size-3.5 text-zinc-400" />
+                        <span>Default Stage (70%)</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator className="my-1 bg-white/10" />
+                  </>
+                )}
+
                 <DropdownMenuGroup>
                   <DropdownMenuItem
                     onClick={handleOptimizeHalfPreset}
@@ -1136,6 +1217,24 @@ export const StreamPlayer = React.memo(function StreamPlayer({
               <RotateCw className="size-3" />
             </TooltipTrigger>
             <TooltipContent>Reload player & resync stream</TooltipContent>
+          </Tooltip>
+
+          {/* 2d. Browse & Scroll YouTube Feed */}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="secondary"
+                  onClick={() => setIsBrowsingYouTube(true)}
+                  className="bg-zinc-900/90 text-red-400 ring-1 ring-white/10 hover:bg-red-600 hover:text-white"
+                />
+              }
+            >
+              <Play className="size-3 fill-current" />
+            </TooltipTrigger>
+            <TooltipContent>Browse & scroll YouTube feed to switch video</TooltipContent>
           </Tooltip>
 
           {/* 3. Swap to Main (shown when not in primary slot) */}

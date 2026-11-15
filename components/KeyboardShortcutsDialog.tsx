@@ -41,6 +41,8 @@ const SHORTCUT_GROUPS: Array<{
     icon: <LayoutGrid className="size-3.5 text-sky-500" />,
     items: [
       { keys: ["G"], description: "Cycle Grid Preset (1x1 → 1x2 → 2x2 → 1+3 → 3x3)" },
+      { keys: ["Drag", "Splitter"], description: "Drag divider to resize screens (1x2, 1+3, 2x2, Solo)" },
+      { keys: ["Double-Click"], description: "Double-click divider to reset split ratio (50:50)" },
       { keys: ["C"], description: "Toggle Live Chat Sidebar" },
       { keys: ["Shift", "C"], description: "Toggle Dual Split Live Chat" },
       { keys: ["[" , "]"], description: "Switch Previous / Next Live Chat Stream" },

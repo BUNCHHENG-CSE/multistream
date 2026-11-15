@@ -48,6 +48,7 @@ function formatDuration(sec: number): string {
 
 export function StudioTelemetryBar() {
   const streams = useStreamStore((s) => s.streams);
+  const gridPreset = useStreamStore((s) => s.gridPreset);
   const focusedVideoId = useStreamStore((s) => s.focusedVideoId);
   const autoCycleEnabled = useStreamStore((s) => s.autoCycleEnabled);
   const autoCycleIntervalSec = useStreamStore((s) => s.autoCycleIntervalSec);
@@ -60,6 +61,10 @@ export function StudioTelemetryBar() {
   const streamQualities = useStreamStore((s) => s.streamQualities);
   const bookmarks = useStreamStore((s) => s.bookmarks);
   const soundscapeType = useStreamStore((s) => s.soundscapeType);
+  const split1x2Ratio = useStreamStore((s) => s.split1x2Ratio);
+  const grid2x2ColRatio = useStreamStore((s) => s.grid2x2ColRatio);
+  const grid2x2RowRatio = useStreamStore((s) => s.grid2x2RowRatio);
+  const mainStageRatio = useStreamStore((s) => s.mainStageRatio);
 
   const triggerSyncAllLive = useStreamStore((s) => s.triggerSyncAllLive);
   const setAutoCycle = useStreamStore((s) => s.setAutoCycle);
@@ -70,6 +75,9 @@ export function StudioTelemetryBar() {
   const setAudioMixerOpen = useStreamStore((s) => s.setAudioMixerOpen);
   const setShortcutsOpen = useStreamStore((s) => s.setShortcutsOpen);
   const setBookmarksOpen = useStreamStore((s) => s.setBookmarksOpen);
+  const setSplit1x2Ratio = useStreamStore((s) => s.setSplit1x2Ratio);
+  const setMainStageRatio = useStreamStore((s) => s.setMainStageRatio);
+  const setGrid2x2Ratios = useStreamStore((s) => s.setGrid2x2Ratios);
 
   const mounted = useSyncExternalStore(
     emptySubscribe,
@@ -217,6 +225,139 @@ export function StudioTelemetryBar() {
                   {sec}s
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Quick Dual-Split Resizer Pills (1x2) */}
+          {gridPreset === "1x2" && streams.length >= 2 && (
+            <div className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-800 dark:bg-zinc-950">
+              <span className="hidden px-1.5 font-mono text-[10px] font-bold text-zinc-500 sm:inline dark:text-zinc-400">
+                Split {Math.round(split1x2Ratio)}:{100 - Math.round(split1x2Ratio)}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSplit1x2Ratio(50);
+                  toast.info("Split set to 50:50");
+                }}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
+                  Math.round(split1x2Ratio) === 50
+                    ? "bg-emerald-600 text-white"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                )}
+              >
+                50:50
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSplit1x2Ratio(65);
+                  toast.info("Split set to 65:35");
+                }}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
+                  Math.round(split1x2Ratio) === 65
+                    ? "bg-emerald-600 text-white"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                )}
+              >
+                65:35
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSplit1x2Ratio(35);
+                  toast.info("Split set to 35:65");
+                }}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
+                  Math.round(split1x2Ratio) === 35
+                    ? "bg-emerald-600 text-white"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                )}
+              >
+                35:65
+              </button>
+            </div>
+          )}
+
+          {/* Quick 1+3 Stage Resizer Pills */}
+          {gridPreset === "1+3" && streams.length >= 2 && (
+            <div className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-800 dark:bg-zinc-950">
+              <span className="hidden px-1.5 font-mono text-[10px] font-bold text-zinc-500 sm:inline dark:text-zinc-400">
+                Stage {Math.round(mainStageRatio)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setMainStageRatio(70);
+                  toast.info("Main stage set to 70%");
+                }}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
+                  Math.round(mainStageRatio) === 70
+                    ? "bg-emerald-600 text-white"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                )}
+              >
+                70%
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMainStageRatio(80);
+                  toast.info("Main stage set to 80%");
+                }}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
+                  Math.round(mainStageRatio) === 80
+                    ? "bg-emerald-600 text-white"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                )}
+              >
+                80%
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMainStageRatio(60);
+                  toast.info("Main stage set to 60%");
+                }}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
+                  Math.round(mainStageRatio) === 60
+                    ? "bg-emerald-600 text-white"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                )}
+              >
+                60%
+              </button>
+            </div>
+          )}
+
+          {/* Quick 2x2 Reset Pill */}
+          {gridPreset === "2x2" && streams.length >= 2 && (
+            <div className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-800 dark:bg-zinc-950">
+              <span className="hidden px-1.5 font-mono text-[10px] font-bold text-zinc-500 sm:inline dark:text-zinc-400">
+                Quad {Math.round(grid2x2ColRatio)}:{Math.round(grid2x2RowRatio)}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setGrid2x2Ratios(50, 50);
+                  toast.info("Reset 2x2 grid to 50:50");
+                }}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
+                  Math.round(grid2x2ColRatio) === 50 &&
+                    Math.round(grid2x2RowRatio) === 50
+                    ? "bg-emerald-600 text-white"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                )}
+              >
+                50:50
+              </button>
             </div>
           )}
 

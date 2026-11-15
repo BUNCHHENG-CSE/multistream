@@ -23,6 +23,8 @@ import {
   Keyboard,
   Bookmark,
   Leaf,
+  ShieldCheck,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -857,6 +859,31 @@ export function Navbar({
                   </DropdownMenuGroup>
                 </>
               )}
+
+              <DropdownMenuSeparator className="my-1 bg-zinc-200/80 dark:bg-zinc-800/80" />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase dark:text-zinc-500">
+                  Legal &amp; Policy
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={() => router.push("/privacy")}
+                  className="cursor-pointer justify-between rounded-lg px-2.5 py-1.5 text-xs text-zinc-700 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <ShieldCheck className="size-3.5 text-emerald-500" />
+                    Privacy Policy
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => router.push("/terms")}
+                  className="cursor-pointer justify-between rounded-lg px-2.5 py-1.5 text-xs text-zinc-700 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <FileText className="size-3.5 text-sky-500" />
+                    Terms of Service
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

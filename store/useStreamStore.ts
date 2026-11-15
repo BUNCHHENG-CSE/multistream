@@ -107,6 +107,9 @@ interface StreamState {
   pipVideoId: string | null;
   chatSidebarWidth: number;
   mainStageRatio: number;
+  split1x2Ratio: number;
+  grid2x2ColRatio: number;
+  grid2x2RowRatio: number;
   isSplitterDragging: boolean;
   showTelemetryTicker: boolean;
   isBookmarksOpen: boolean;
@@ -179,6 +182,11 @@ interface StreamState {
   setPipVideoId: (videoId: string | null) => void;
   setChatSidebarWidth: (width: number) => void;
   setMainStageRatio: (ratio: number) => void;
+  setSplit1x2Ratio: (ratio: number) => void;
+  setGrid2x2Ratios: (colRatio: number, rowRatio: number) => void;
+  setGrid2x2ColRatio: (colRatio: number) => void;
+  setGrid2x2RowRatio: (rowRatio: number) => void;
+  resetSplitRatios: () => void;
   setSplitterDragging: (dragging: boolean) => void;
   setShowTelemetryTicker: (show: boolean) => void;
   setBookmarksOpen: (open: boolean) => void;
@@ -274,6 +282,9 @@ export const useStreamStore = create<StreamState>()(
       pipVideoId: null,
       chatSidebarWidth: 360,
       mainStageRatio: 70,
+      split1x2Ratio: 50,
+      grid2x2ColRatio: 50,
+      grid2x2RowRatio: 50,
       isSplitterDragging: false,
       showTelemetryTicker: true,
       isBookmarksOpen: false,
@@ -1062,8 +1073,38 @@ export const useStreamStore = create<StreamState>()(
       },
 
       setMainStageRatio: (ratio: number) => {
-        const clamped = Math.max(45, Math.min(82, Math.round(ratio)));
+        const clamped = Math.max(20, Math.min(85, Math.round(ratio)));
         set({ mainStageRatio: clamped });
+      },
+
+      setSplit1x2Ratio: (ratio: number) => {
+        const clamped = Math.max(15, Math.min(85, Math.round(ratio)));
+        set({ split1x2Ratio: clamped });
+      },
+
+      setGrid2x2Ratios: (colRatio: number, rowRatio: number) => {
+        const clampedCol = Math.max(20, Math.min(80, Math.round(colRatio)));
+        const clampedRow = Math.max(20, Math.min(80, Math.round(rowRatio)));
+        set({ grid2x2ColRatio: clampedCol, grid2x2RowRatio: clampedRow });
+      },
+
+      setGrid2x2ColRatio: (colRatio: number) => {
+        const clamped = Math.max(20, Math.min(80, Math.round(colRatio)));
+        set({ grid2x2ColRatio: clamped });
+      },
+
+      setGrid2x2RowRatio: (rowRatio: number) => {
+        const clamped = Math.max(20, Math.min(80, Math.round(rowRatio)));
+        set({ grid2x2RowRatio: clamped });
+      },
+
+      resetSplitRatios: () => {
+        set({
+          split1x2Ratio: 50,
+          grid2x2ColRatio: 50,
+          grid2x2RowRatio: 50,
+          mainStageRatio: 70,
+        });
       },
 
       setSplitterDragging: (dragging: boolean) => {
@@ -1222,6 +1263,9 @@ export const useStreamStore = create<StreamState>()(
         autoCycleIntervalSec: state.autoCycleIntervalSec,
         chatSidebarWidth: state.chatSidebarWidth,
         mainStageRatio: state.mainStageRatio,
+        split1x2Ratio: state.split1x2Ratio,
+        grid2x2ColRatio: state.grid2x2ColRatio,
+        grid2x2RowRatio: state.grid2x2RowRatio,
         showTelemetryTicker: state.showTelemetryTicker,
         bookmarks: state.bookmarks,
         ambilightEnabled: state.ambilightEnabled,

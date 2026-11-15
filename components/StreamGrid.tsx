@@ -6,7 +6,6 @@ import {
   Sparkles,
   Play,
   Layers,
-  Radio,
   ArrowUpRight,
   Link2,
   Tv,
@@ -18,12 +17,16 @@ import {
   Keyboard,
   Newspaper,
   Gamepad2,
+  GripHorizontal,
+  GripVertical,
+  Move,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { StreamPlayer } from "@/components/StreamPlayer";
+import { YoutubeFeedSlot } from "@/components/YoutubeFeedSlot";
 import { CommandPalette } from "@/components/CommandPalette";
 import { FloatingPipDock } from "@/components/FloatingPipDock";
 import { BookmarksDialog } from "@/components/BookmarksDialog";
@@ -71,14 +74,14 @@ function getGridContainerClasses(
       case "1x1":
         return "grid-cols-1 grid-rows-1";
       case "1x2":
-        return "grid-cols-1 grid-rows-3 md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-1";
+        return "grid-cols-1 grid-rows-[var(--stage-main)_1fr] md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-1";
       case "2x2":
       case "1+3":
-        return "grid-cols-1 sm:grid-cols-2 lg:grid-cols-[var(--stage-main)_1fr] lg:grid-rows-3";
+        return "grid-cols-1 sm:grid-cols-2 md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-3";
       case "3x3":
-        return "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 lg:auto-rows-fr";
+        return "grid-cols-1 sm:grid-cols-2 md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-3";
       default:
-        return "grid-cols-1 sm:grid-cols-2 lg:grid-cols-[var(--stage-main)_1fr] lg:grid-rows-3";
+        return "grid-cols-1 sm:grid-cols-2 md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-3";
     }
   }
 
@@ -86,11 +89,11 @@ function getGridContainerClasses(
     case "1x1":
       return "grid-cols-1 grid-rows-1";
     case "1x2":
-      return "grid-cols-1 grid-rows-2 md:grid-cols-2 md:grid-rows-1";
+      return "grid-cols-1 grid-rows-[var(--split-1x2-row)_1fr] md:grid-cols-[var(--split-1x2)_1fr] md:grid-rows-1";
     case "2x2":
-      return "grid-cols-1 sm:grid-cols-2 sm:grid-rows-2";
+      return "grid-cols-1 sm:grid-cols-[var(--split-2x2-col)_1fr] sm:grid-rows-[var(--split-2x2-row)_1fr]";
     case "1+3":
-      return "grid-cols-1 lg:grid-cols-[var(--stage-main)_1fr] lg:grid-rows-3";
+      return "grid-cols-1 md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-3";
     case "3x3":
       return "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 lg:grid-rows-3";
     default:
@@ -108,12 +111,12 @@ function getTileSlotClasses(
     if (isFocusedTile) {
       switch (preset) {
         case "1x2":
-          return "order-first row-span-2 md:row-span-1 md:col-span-1 min-h-[220px]";
+          return "order-first col-span-1 row-span-1 min-h-[200px]";
         case "2x2":
         case "1+3":
-          return "order-first sm:col-span-2 lg:col-span-1 lg:row-span-3 min-h-[240px]";
+          return "order-first sm:col-span-2 md:col-span-1 md:row-span-3 min-h-[240px]";
         case "3x3":
-          return "order-first sm:col-span-2 sm:row-span-2 min-h-[220px]";
+          return "order-first sm:col-span-2 md:col-span-1 md:row-span-3 min-h-[220px]";
         default:
           return "order-first min-h-[220px]";
       }
@@ -123,9 +126,9 @@ function getTileSlotClasses(
 
   if (preset === "1+3") {
     if (index === 0) {
-      return "lg:col-span-1 lg:row-span-3 min-h-[240px]";
+      return "md:col-span-1 md:row-span-3 min-h-[240px]";
     }
-    return "lg:col-span-1 lg:row-span-1 min-h-[140px]";
+    return "md:col-span-1 md:row-span-1 min-h-[140px]";
   }
   return "min-h-[160px]";
 }
@@ -237,6 +240,9 @@ export function StreamGrid() {
   const autoCycleIntervalSec = useStreamStore((s) => s.autoCycleIntervalSec);
   const ecoModeEnabled = useStreamStore((s) => s.ecoModeEnabled);
   const mainStageRatio = useStreamStore((s) => s.mainStageRatio);
+  const split1x2Ratio = useStreamStore((s) => s.split1x2Ratio);
+  const grid2x2ColRatio = useStreamStore((s) => s.grid2x2ColRatio);
+  const grid2x2RowRatio = useStreamStore((s) => s.grid2x2RowRatio);
   const ambilightEnabled = useStreamStore((s) => s.ambilightEnabled);
 
   const addStream = useStreamStore((s) => s.addStream);
@@ -250,39 +256,98 @@ export function StreamGrid() {
   const cycleNextStream = useStreamStore((s) => s.cycleNextStream);
   const setShortcutsOpen = useStreamStore((s) => s.setShortcutsOpen);
   const setMainStageRatio = useStreamStore((s) => s.setMainStageRatio);
+  const setSplit1x2Ratio = useStreamStore((s) => s.setSplit1x2Ratio);
+  const setGrid2x2Ratios = useStreamStore((s) => s.setGrid2x2Ratios);
+  const setGrid2x2ColRatio = useStreamStore((s) => s.setGrid2x2ColRatio);
+  const setGrid2x2RowRatio = useStreamStore((s) => s.setGrid2x2RowRatio);
   const setSplitterDragging = useStreamStore((s) => s.setSplitterDragging);
 
   const [customUrl, setCustomUrl] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [isStageResizing, setIsStageResizing] = useState(false);
+
+  type ResizeTarget =
+    | "1x2-col"
+    | "1x2-row"
+    | "stage-col"
+    | "2x2-col"
+    | "2x2-row"
+    | "2x2-both";
+
+  const [activeResizeTarget, setActiveResizeTarget] =
+    useState<ResizeTarget | null>(null);
   const gridContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!isStageResizing) return;
+    if (!activeResizeTarget) return;
+
+    const prevCursor = document.body.style.cursor;
+    const prevUserSelect = document.body.style.userSelect;
+    const cursor =
+      activeResizeTarget === "2x2-both"
+        ? "move"
+        : activeResizeTarget.includes("col")
+          ? "col-resize"
+          : "row-resize";
+    document.body.style.cursor = cursor;
+    document.body.style.userSelect = "none";
 
     const onPointerMove = (e: PointerEvent) => {
       const container = gridContainerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      if (rect.width <= 0) return;
-      const pct = ((e.clientX - rect.left) / rect.width) * 100;
-      setMainStageRatio(pct);
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      const pctX = ((e.clientX - rect.left) / rect.width) * 100;
+      const pctY = ((e.clientY - rect.top) / rect.height) * 100;
+
+      switch (activeResizeTarget) {
+        case "1x2-col":
+          setSplit1x2Ratio(pctX);
+          break;
+        case "1x2-row":
+          setSplit1x2Ratio(pctY);
+          break;
+        case "stage-col":
+          setMainStageRatio(pctX);
+          break;
+        case "2x2-col":
+          setGrid2x2ColRatio(pctX);
+          break;
+        case "2x2-row":
+          setGrid2x2RowRatio(pctY);
+          break;
+        case "2x2-both":
+          setGrid2x2Ratios(pctX, pctY);
+          break;
+      }
     };
 
     const onPointerUp = () => {
-      setIsStageResizing(false);
+      setActiveResizeTarget(null);
       setSplitterDragging(false);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevUserSelect;
     };
 
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     return () => {
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevUserSelect;
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, [isStageResizing, setMainStageRatio, setSplitterDragging]);
+  }, [
+    activeResizeTarget,
+    setSplit1x2Ratio,
+    setMainStageRatio,
+    setGrid2x2ColRatio,
+    setGrid2x2RowRatio,
+    setGrid2x2Ratios,
+    setSplitterDragging,
+  ]);
 
   // Read instant-share ?streams=...&preset=... from URL on mount
   useEffect(() => {
@@ -859,10 +924,15 @@ export function StreamGrid() {
     visibleStreams[0]?.videoId ??
     "";
   const ambilight = getAmbilightPalette(leadStreamId);
-  const showResizableStageSplitter =
+
+  const show1x2Splitter =
+    gridPreset === "1x2" && !hasFocusedStream && visibleStreams.length >= 1;
+  const showStageSplitter =
     (gridPreset === "1+3" && !hasFocusedStream) ||
     (hasFocusedStream &&
       (gridPreset === "1x2" || gridPreset === "2x2" || gridPreset === "1+3"));
+  const show2x2Splitter =
+    gridPreset === "2x2" && !hasFocusedStream && visibleStreams.length >= 1;
 
   return (
     <div className="bg-studio-grid relative flex h-[calc(100vh-4rem)] w-full flex-1 flex-col overflow-hidden bg-zinc-100/80 p-1.5 transition-colors duration-200 sm:p-2 dark:bg-zinc-950">
@@ -882,6 +952,10 @@ export function StreamGrid() {
         ref={gridContainerRef}
         style={
           {
+            "--split-1x2": `${split1x2Ratio}%`,
+            "--split-1x2-row": `${split1x2Ratio}%`,
+            "--split-2x2-col": `${grid2x2ColRatio}%`,
+            "--split-2x2-row": `${grid2x2RowRatio}%`,
             "--stage-main": `${mainStageRatio}%`,
           } as React.CSSProperties
         }
@@ -890,16 +964,147 @@ export function StreamGrid() {
           getGridContainerClasses(gridPreset, hasFocusedStream)
         )}
       >
-        {/* Draggable Main Stage Vertical Splitter (1+3 & Solo Focus desktop layouts) */}
-        {showResizableStageSplitter && (
+        {/* Fullscreen transparent drag shield overlay during any active resizing */}
+        {activeResizeTarget && (
+          <div
+            className="fixed inset-0 z-50 select-none"
+            style={{
+              cursor:
+                activeResizeTarget === "2x2-both"
+                  ? "move"
+                  : activeResizeTarget.includes("col")
+                    ? "col-resize"
+                    : "row-resize",
+            }}
+          />
+        )}
+
+        {/* 1x2 Vertical Splitter (Desktop/Tablet) */}
+        {show1x2Splitter && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize 1x2 screen split (double-click to reset)"
+            style={{ left: `calc(${split1x2Ratio}% - 8px)` }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              setActiveResizeTarget("1x2-col");
+              setSplitterDragging(true);
+            }}
+            onDoubleClick={() => {
+              setSplit1x2Ratio(50);
+              toast.info("Reset dual split to 50:50");
+            }}
+            title="Drag to resize screens (double-click to reset to 50:50)"
+            className={cn(
+              "group/split absolute inset-y-1 z-30 hidden w-4 cursor-col-resize items-center justify-center md:flex",
+              activeResizeTarget === "1x2-col" && "bg-emerald-500/10"
+            )}
+          >
+            <div
+              className={cn(
+                "h-full w-1 rounded-full transition-all duration-150",
+                activeResizeTarget === "1x2-col"
+                  ? "w-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
+                  : "bg-zinc-300/60 dark:bg-zinc-700/60 group-hover/split:bg-emerald-400 group-hover/split:shadow-[0_0_8px_rgba(16,185,129,0.7)]"
+              )}
+            />
+            <div
+              className={cn(
+                "absolute flex h-11 w-4 items-center justify-center rounded-full border border-zinc-300/90 bg-white/95 text-zinc-600 shadow-md backdrop-blur-md transition-all duration-150 group-hover/split:scale-110 group-hover/split:border-emerald-500 group-hover/split:bg-zinc-950 group-hover/split:text-emerald-400 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300",
+                activeResizeTarget === "1x2-col" &&
+                  "scale-110 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+              )}
+            >
+              <GripVertical className="size-3" />
+            </div>
+
+            <div
+              className={cn(
+                "pointer-events-none absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-emerald-500/40 bg-zinc-950/95 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-300 shadow-lg backdrop-blur-md transition-opacity duration-150",
+                activeResizeTarget === "1x2-col"
+                  ? "opacity-100"
+                  : "opacity-0 group-hover/split:opacity-100"
+              )}
+            >
+              {Math.round(split1x2Ratio)}% : {100 - Math.round(split1x2Ratio)}%
+            </div>
+
+            <div className="pointer-events-auto absolute top-1/2 left-6 -translate-y-1/2 hidden group-hover/split:flex items-center gap-1 rounded-lg border border-zinc-200/90 bg-white/95 p-1 shadow-xl backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/95">
+              {[
+                { label: "50:50", ratio: 50 },
+                { label: "65:35", ratio: 65 },
+                { label: "35:65", ratio: 35 },
+              ].map((snap) => (
+                <button
+                  key={snap.label}
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSplit1x2Ratio(snap.ratio);
+                    toast.info(`Split set to ${snap.label}`);
+                  }}
+                  className={cn(
+                    "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
+                    Math.round(split1x2Ratio) === snap.ratio
+                      ? "bg-emerald-600 text-white"
+                      : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  )}
+                >
+                  {snap.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 1x2 Horizontal Splitter (Mobile/Stacked) */}
+        {show1x2Splitter && (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize 1x2 screen split (double-click to reset)"
+            style={{ top: `calc(${split1x2Ratio}% - 8px)` }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              setActiveResizeTarget("1x2-row");
+              setSplitterDragging(true);
+            }}
+            onDoubleClick={() => {
+              setSplit1x2Ratio(50);
+              toast.info("Reset dual split to 50:50");
+            }}
+            title="Drag to resize screens"
+            className={cn(
+              "group/split absolute inset-x-1 z-30 flex h-4 cursor-row-resize items-center justify-center md:hidden",
+              activeResizeTarget === "1x2-row" && "bg-emerald-500/10"
+            )}
+          >
+            <div
+              className={cn(
+                "h-1 w-full rounded-full transition-all duration-150",
+                activeResizeTarget === "1x2-row"
+                  ? "h-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
+                  : "bg-zinc-300/60 dark:bg-zinc-700/60"
+              )}
+            />
+            <div className="absolute flex h-4 w-11 items-center justify-center rounded-full border border-zinc-300/90 bg-white/95 text-zinc-600 shadow-md backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300">
+              <GripHorizontal className="size-3" />
+            </div>
+          </div>
+        )}
+
+        {/* Main Stage Vertical Splitter (1+3 & Solo Focus layouts) */}
+        {showStageSplitter && (
           <div
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize Main Stage split (double-click to reset)"
-            style={{ left: `calc(${mainStageRatio}% - 4px)` }}
+            style={{ left: `calc(${mainStageRatio}% - 8px)` }}
             onPointerDown={(e) => {
               e.preventDefault();
-              setIsStageResizing(true);
+              setActiveResizeTarget("stage-col");
               setSplitterDragging(true);
             }}
             onDoubleClick={() => {
@@ -908,19 +1113,160 @@ export function StreamGrid() {
             }}
             title="Drag to resize Main Stage vs side feeds (double-click to reset)"
             className={cn(
-              "group/split absolute inset-y-2 z-30 hidden w-2.5 cursor-col-resize items-center justify-center lg:flex",
-              isStageResizing && "bg-emerald-500/15"
+              "group/split absolute inset-y-1 z-30 hidden w-4 cursor-col-resize items-center justify-center md:flex",
+              activeResizeTarget === "stage-col" && "bg-emerald-500/10"
             )}
           >
             <div
               className={cn(
-                "h-14 w-1 rounded-full transition-all",
-                isStageResizing
-                  ? "h-28 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]"
-                  : "bg-white/30 opacity-0 group-hover/split:bg-emerald-400 group-hover/split:opacity-100"
+                "h-full w-1 rounded-full transition-all duration-150",
+                activeResizeTarget === "stage-col"
+                  ? "w-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
+                  : "bg-zinc-300/60 dark:bg-zinc-700/60 group-hover/split:bg-emerald-400 group-hover/split:shadow-[0_0_8px_rgba(16,185,129,0.7)]"
               )}
             />
+            <div
+              className={cn(
+                "absolute flex h-11 w-4 items-center justify-center rounded-full border border-zinc-300/90 bg-white/95 text-zinc-600 shadow-md backdrop-blur-md transition-all duration-150 group-hover/split:scale-110 group-hover/split:border-emerald-500 group-hover/split:bg-zinc-950 group-hover/split:text-emerald-400 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300",
+                activeResizeTarget === "stage-col" &&
+                  "scale-110 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+              )}
+            >
+              <GripVertical className="size-3" />
+            </div>
+
+            <div
+              className={cn(
+                "pointer-events-none absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-emerald-500/40 bg-zinc-950/95 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-300 shadow-lg backdrop-blur-md transition-opacity duration-150",
+                activeResizeTarget === "stage-col"
+                  ? "opacity-100"
+                  : "opacity-0 group-hover/split:opacity-100"
+              )}
+            >
+              Stage {Math.round(mainStageRatio)}% : {100 - Math.round(mainStageRatio)}%
+            </div>
+
+            <div className="pointer-events-auto absolute top-1/2 left-6 -translate-y-1/2 hidden group-hover/split:flex items-center gap-1 rounded-lg border border-zinc-200/90 bg-white/95 p-1 shadow-xl backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/95">
+              {[
+                { label: "70%", ratio: 70 },
+                { label: "80%", ratio: 80 },
+                { label: "60%", ratio: 60 },
+              ].map((snap) => (
+                <button
+                  key={snap.label}
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMainStageRatio(snap.ratio);
+                    toast.info(`Main stage set to ${snap.label}`);
+                  }}
+                  className={cn(
+                    "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
+                    Math.round(mainStageRatio) === snap.ratio
+                      ? "bg-emerald-600 text-white"
+                      : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  )}
+                >
+                  {snap.label}
+                </button>
+              ))}
+            </div>
           </div>
+        )}
+
+        {/* 2x2 Splitters: Vertical, Horizontal, and Center 2D Intersection Handle */}
+        {show2x2Splitter && (
+          <>
+            {/* 2x2 Vertical Column Splitter */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize 2x2 columns (double-click to reset)"
+              style={{ left: `calc(${grid2x2ColRatio}% - 8px)` }}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                setActiveResizeTarget("2x2-col");
+                setSplitterDragging(true);
+              }}
+              onDoubleClick={() => {
+                setGrid2x2ColRatio(50);
+                toast.info("Reset column split to 50:50");
+              }}
+              title="Drag to resize columns (double-click to reset to 50:50)"
+              className={cn(
+                "group/split absolute inset-y-1 z-30 hidden w-4 cursor-col-resize items-center justify-center sm:flex",
+                activeResizeTarget === "2x2-col" && "bg-emerald-500/10"
+              )}
+            >
+              <div
+                className={cn(
+                  "h-full w-1 rounded-full transition-all duration-150",
+                  activeResizeTarget === "2x2-col"
+                    ? "w-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
+                    : "bg-zinc-300/60 dark:bg-zinc-700/60 group-hover/split:bg-emerald-400"
+                )}
+              />
+            </div>
+
+            {/* 2x2 Horizontal Row Splitter */}
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize 2x2 rows (double-click to reset)"
+              style={{ top: `calc(${grid2x2RowRatio}% - 8px)` }}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                setActiveResizeTarget("2x2-row");
+                setSplitterDragging(true);
+              }}
+              onDoubleClick={() => {
+                setGrid2x2RowRatio(50);
+                toast.info("Reset row split to 50:50");
+              }}
+              title="Drag to resize rows (double-click to reset to 50:50)"
+              className={cn(
+                "group/split absolute inset-x-1 z-30 hidden h-4 cursor-row-resize items-center justify-center sm:flex",
+                activeResizeTarget === "2x2-row" && "bg-emerald-500/10"
+              )}
+            >
+              <div
+                className={cn(
+                  "h-1 w-full rounded-full transition-all duration-150",
+                  activeResizeTarget === "2x2-row"
+                    ? "h-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
+                    : "bg-zinc-300/60 dark:bg-zinc-700/60 group-hover/split:bg-emerald-400"
+                )}
+              />
+            </div>
+
+            {/* 2x2 Center Intersection Handle (2D Resizing) */}
+            <div
+              role="button"
+              aria-label="Resize 2x2 grid (drag both axes, double-click to reset)"
+              style={{
+                left: `calc(${grid2x2ColRatio}% - 14px)`,
+                top: `calc(${grid2x2RowRatio}% - 14px)`,
+              }}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                setActiveResizeTarget("2x2-both");
+                setSplitterDragging(true);
+              }}
+              onDoubleClick={() => {
+                setGrid2x2Ratios(50, 50);
+                toast.info("Reset 2x2 grid to 50:50");
+              }}
+              title="Drag to resize all 4 quadrants (double-click to reset to 50:50)"
+              className={cn(
+                "group/center absolute z-35 hidden size-7 cursor-move items-center justify-center rounded-full border border-zinc-300/90 bg-white/95 text-zinc-600 shadow-lg backdrop-blur-md transition-all hover:scale-125 hover:border-emerald-500 hover:bg-zinc-950 hover:text-emerald-400 sm:flex dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300",
+                activeResizeTarget === "2x2-both" &&
+                  "scale-125 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_14px_rgba(16,185,129,0.7)]"
+              )}
+            >
+              <Move className="size-3.5" />
+            </div>
+          </>
         )}
         {visibleStreams.map((stream, index) => {
           const isFocusedTile =
@@ -959,20 +1305,14 @@ export function StreamGrid() {
           );
         })}
 
-        {/* Empty Grid Slot Placeholders when active streams < preset capacity */}
+        {/* Empty Grid Slot Placeholders — Real YouTube Feed Browser */}
         {Array.from({ length: emptySlotCount }).map((_, idx) => {
           const slotIndex = visibleStreams.length + idx;
-          const unusedCurated = CURATED_LIVE_STREAMS.filter(
-            (c) => !streams.some((s) => s.videoId === c.videoId)
-          );
-          const nextSuggestion =
-            unusedCurated[idx % Math.max(1, unusedCurated.length)];
-
           return (
             <div
               key={`empty-slot-${slotIndex}`}
               className={cn(
-                "group relative flex h-full w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-zinc-300/90 bg-white/60 p-4 text-center backdrop-blur-xs transition-all duration-200 hover:border-emerald-500/50 hover:bg-white/90 dark:border-zinc-800/80 dark:bg-zinc-900/25 dark:hover:border-emerald-500/40 dark:hover:bg-zinc-900/45",
+                "relative h-full w-full overflow-hidden",
                 getTileSlotClasses(
                   gridPreset,
                   slotIndex,
@@ -981,40 +1321,7 @@ export function StreamGrid() {
                 )
               )}
             >
-              <div className="flex items-center gap-1.5 rounded-full border border-zinc-200/90 bg-zinc-100/90 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-                <Radio className="size-3 text-emerald-600 dark:text-emerald-400" />
-                <span>SLOT 0{slotIndex + 1}</span>
-              </div>
-
-              <p className="mt-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                Available Broadcast Slot
-              </p>
-              <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-500">
-                Paste a YouTube, Twitch, or Kick link above
-              </p>
-
-              {nextSuggestion && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() => {
-                    const res = addStream(
-                      nextSuggestion.videoId,
-                      nextSuggestion.label
-                    );
-                    if (res.success) {
-                      toast.success(`Added "${nextSuggestion.label}"`);
-                    }
-                  }}
-                  className="mt-3 gap-1.5 rounded-lg border-zinc-200/90 bg-white text-[11px] font-medium text-zinc-700 shadow-2xs hover:border-emerald-500/50 hover:text-emerald-700 dark:border-zinc-800 dark:bg-zinc-900/90 dark:text-zinc-300 dark:hover:border-emerald-500/40 dark:hover:text-emerald-300"
-                >
-                  <Plus className="size-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>
-                    Quick Fill: {nextSuggestion.label.split("—")[0].trim()}
-                  </span>
-                </Button>
-              )}
+              <YoutubeFeedSlot slotIndex={slotIndex} className="h-full" />
             </div>
           );
         })}
