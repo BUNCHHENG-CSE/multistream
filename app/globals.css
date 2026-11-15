@@ -192,3 +192,40 @@
 .animate-float-reaction {
   animation: float-reaction-up 2.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
+
+/* Studio custom slim scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0 0 / 0.22);
+  border-radius: 9999px;
+  transition: background-color 0.15s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0 0 / 0.42);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: oklch(1 0 0 / 0.18);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.696 0.17 162.48 / 0.55);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.5 0 0 / 0.22) transparent;
+}
+
+.dark * {
+  scrollbar-color: oklch(1 0 0 / 0.18) transparent;
+}

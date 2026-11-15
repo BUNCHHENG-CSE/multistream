@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { headers } from "next/headers";
-import { auth, isGoogleAuthEnabled, getServerSession } from "@/auth";
+import { isGoogleAuthEnabled, getServerSession } from "@/auth";
 import { prisma } from "@/db";
 
 interface VideoResult {
@@ -353,7 +352,7 @@ function applyChannelDiversity(
 async function fetchPublicYouTubeFeed(
   query: string,
   continuation: string,
-  region: string = "GLOBAL"
+  region: string = "KH"
 ): Promise<{ videos: VideoResult[]; nextToken: string | null }> {
   const isKhmer = region.toUpperCase() === "KH";
   const hl = isKhmer ? "km" : "en";
@@ -374,6 +373,8 @@ async function fetchPublicYouTubeFeed(
       ? [
           "live stream cambodia",
           "trending khmer",
+          "khmer music trending",
+          "MPL KH Mobile Legends Cambodia live",
           "M.Megamind RavenBlaze cambodia gaming",
         ]
       : [
@@ -651,7 +652,7 @@ async function fetchUserPersonalizedFeed(
     // 2. Fetch user's liked videos as part of recommended feed
     try {
       const likedRes = await fetch(
-        "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&myRating=like&maxResults=10",
+        "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&myRating=like&maxResults=25",
         {
           headers: { Authorization: `Bearer ${googleToken}` },
         }
@@ -728,7 +729,8 @@ export async function GET(req: NextRequest) {
   const query = searchParams.get("q")?.trim() || "All";
   const continuation = searchParams.get("continuation")?.trim() || "";
   const forcePersonalized = searchParams.get("personalized") === "true";
-  const region = searchParams.get("region")?.trim() || "GLOBAL";
+  const isInitial = searchParams.get("initial") === "true";
+  const region = searchParams.get("region")?.trim() || "KH";
 
   // Check auth session
   let session = null;
@@ -748,6 +750,9 @@ export async function GET(req: NextRequest) {
           userId: session.user.id,
           providerId: "google",
         },
+        orderBy: {
+          updatedAt: "desc",
+        },
       });
 
       if (googleAccount) {
@@ -758,10 +763,13 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Any authenticated Google account has YouTube scopes requested upon sign-in
   const hasYouTubeScope = Boolean(
-    googleAccount?.scope &&
-      (googleAccount.scope.includes("youtube.readonly") ||
-        googleAccount.scope.includes("youtube"))
+    googleAccount &&
+      (googleAccount.scope?.includes("youtube") ||
+        Boolean(googleToken) ||
+        Boolean(googleAccount.accessToken) ||
+        Boolean(googleAccount.refreshToken))
   );
 
   const authStatus = {
@@ -781,24 +789,47 @@ export async function GET(req: NextRequest) {
   // Determine if we should show personalized user feed:
   // - User has logged in with Google AND
   // - Account has granted YouTube scopes AND
-  // - Either query is "For You" / "Subscriptions" OR user requested personalized feed without specific search
+  // - User specifically asked for "For You" / "Subscriptions" OR initial load with YouTube connected
+  const isPersonalizedQuery =
+    forcePersonalized ||
+    query.toLowerCase() === "for you" ||
+    query.toLowerCase() === "subscriptions" ||
+    query.toLowerCase() === "my youtube" ||
+    (isInitial && hasYouTubeScope);
+
   const shouldServePersonalized =
     Boolean(googleToken) &&
     hasYouTubeScope &&
     !continuation &&
-    (forcePersonalized ||
-      query === "All" ||
-      query.toLowerCase() === "for you" ||
-      query.toLowerCase() === "subscriptions" ||
-      query.toLowerCase() === "my youtube");
+    isPersonalizedQuery;
 
   if (shouldServePersonalized && googleToken) {
     try {
-      const personalVideos = await fetchUserPersonalizedFeed(googleToken);
-      if (personalVideos.length > 0) {
+      // Fetch user's personalized videos (subscriptions & liked) in parallel with public trending/recommended feed
+      const [personalVideos, publicFeed] = await Promise.all([
+        fetchUserPersonalizedFeed(googleToken).catch((err) => {
+          console.error("Personalized feed fetch error:", err);
+          return [] as VideoResult[];
+        }),
+        fetchPublicYouTubeFeed("All", "", region).catch((err) => {
+          console.error("Public feed fallback error:", err);
+          return { videos: [] as VideoResult[], nextToken: null };
+        }),
+      ]);
+
+      // Deduplicate: avoid repeating any video that already appears in personalVideos
+      const personalIds = new Set(personalVideos.map((v) => v.videoId));
+      const filteredPublic = publicFeed.videos.filter(
+        (v) => !personalIds.has(v.videoId)
+      );
+
+      // Merge: personal videos first (liked + subscription uploads), then endless recommendations
+      const combinedVideos = [...personalVideos, ...filteredPublic];
+
+      if (combinedVideos.length > 0) {
         return NextResponse.json({
-          videos: personalVideos,
-          nextToken: null,
+          videos: combinedVideos,
+          nextToken: publicFeed.nextToken,
           isPersonalized: true,
           region,
           authStatus,

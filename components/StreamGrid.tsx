@@ -74,14 +74,14 @@ function getGridContainerClasses(
       case "1x1":
         return "grid-cols-1 grid-rows-1";
       case "1x2":
-        return "grid-cols-1 grid-rows-[var(--stage-main)_1fr] md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-1";
+        return "grid-cols-1 grid-rows-[calc(var(--stage-main)-4px)_1fr] md:grid-cols-[calc(var(--stage-main)-4px)_1fr] md:grid-rows-1";
       case "2x2":
       case "1+3":
-        return "grid-cols-1 sm:grid-cols-2 md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-3";
+        return "grid-cols-1 sm:grid-cols-2 md:grid-cols-[calc(var(--stage-main)-4px)_1fr] md:grid-rows-3";
       case "3x3":
-        return "grid-cols-1 sm:grid-cols-2 md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-3";
+        return "grid-cols-1 sm:grid-cols-2 md:grid-cols-[calc(var(--stage-main)-4px)_1fr] md:grid-rows-3";
       default:
-        return "grid-cols-1 sm:grid-cols-2 md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-3";
+        return "grid-cols-1 sm:grid-cols-2 md:grid-cols-[calc(var(--stage-main)-4px)_1fr] md:grid-rows-3";
     }
   }
 
@@ -89,11 +89,11 @@ function getGridContainerClasses(
     case "1x1":
       return "grid-cols-1 grid-rows-1";
     case "1x2":
-      return "grid-cols-1 grid-rows-[var(--split-1x2-row)_1fr] md:grid-cols-[var(--split-1x2)_1fr] md:grid-rows-1";
+      return "grid-cols-1 grid-rows-[calc(var(--split-1x2-row)-4px)_1fr] md:grid-cols-[calc(var(--split-1x2)-4px)_1fr] md:grid-rows-1";
     case "2x2":
-      return "grid-cols-1 sm:grid-cols-[var(--split-2x2-col)_1fr] sm:grid-rows-[var(--split-2x2-row)_1fr]";
+      return "grid-cols-1 sm:grid-cols-[calc(var(--split-2x2-col)-4px)_1fr] sm:grid-rows-[calc(var(--split-2x2-row)-4px)_1fr]";
     case "1+3":
-      return "grid-cols-1 md:grid-cols-[var(--stage-main)_1fr] md:grid-rows-3";
+      return "grid-cols-1 md:grid-cols-[calc(var(--stage-main)-4px)_1fr] md:grid-rows-3";
     case "3x3":
       return "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 lg:grid-rows-3";
     default:
@@ -985,7 +985,7 @@ export function StreamGrid() {
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize 1x2 screen split (double-click to reset)"
-            style={{ left: `calc(${split1x2Ratio}% - 8px)` }}
+            style={{ left: `${split1x2Ratio}%` }}
             onPointerDown={(e) => {
               e.preventDefault();
               setActiveResizeTarget("1x2-col");
@@ -997,65 +997,72 @@ export function StreamGrid() {
             }}
             title="Drag to resize screens (double-click to reset to 50:50)"
             className={cn(
-              "group/split absolute inset-y-1 z-30 hidden w-4 cursor-col-resize items-center justify-center md:flex",
+              "group/split absolute inset-y-1.5 z-30 hidden w-5 -translate-x-1/2 cursor-col-resize items-center justify-center md:flex transition-colors duration-150",
               activeResizeTarget === "1x2-col" && "bg-emerald-500/10"
             )}
           >
+            {/* Center Track Line */}
             <div
               className={cn(
-                "h-full w-1 rounded-full transition-all duration-150",
+                "h-full w-0.5 rounded-full transition-all duration-200",
                 activeResizeTarget === "1x2-col"
-                  ? "w-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
-                  : "bg-zinc-300/60 dark:bg-zinc-700/60 group-hover/split:bg-emerald-400 group-hover/split:shadow-[0_0_8px_rgba(16,185,129,0.7)]"
+                  ? "w-1 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.85)]"
+                  : "bg-zinc-300/60 dark:bg-zinc-800/80 group-hover/split:w-1 group-hover/split:bg-emerald-400 group-hover/split:shadow-[0_0_8px_rgba(16,185,129,0.5)]"
               )}
             />
+
+            {/* Ergonomic Glassmorphic Grip Handle */}
             <div
               className={cn(
-                "absolute flex h-11 w-4 items-center justify-center rounded-full border border-zinc-300/90 bg-white/95 text-zinc-600 shadow-md backdrop-blur-md transition-all duration-150 group-hover/split:scale-110 group-hover/split:border-emerald-500 group-hover/split:bg-zinc-950 group-hover/split:text-emerald-400 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300",
+                "absolute flex h-9 w-4.5 items-center justify-center rounded-full border border-zinc-300/80 bg-white/95 text-zinc-500 shadow-sm backdrop-blur-md transition-all duration-150 group-hover/split:scale-105 group-hover/split:border-emerald-500/80 group-hover/split:bg-zinc-950 group-hover/split:text-emerald-400 group-hover/split:shadow-[0_0_12px_rgba(16,185,129,0.4)] dark:border-zinc-700/80 dark:bg-zinc-900/90 dark:text-zinc-400",
                 activeResizeTarget === "1x2-col" &&
-                  "scale-110 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+                  "scale-110 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_14px_rgba(16,185,129,0.6)] ring-2 ring-emerald-500/30"
               )}
             >
               <GripVertical className="size-3" />
             </div>
 
+            {/* Percentage Badge */}
             <div
               className={cn(
-                "pointer-events-none absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-emerald-500/40 bg-zinc-950/95 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-300 shadow-lg backdrop-blur-md transition-opacity duration-150",
+                "pointer-events-none absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-emerald-500/40 bg-zinc-950/95 px-2.5 py-0.5 font-mono text-[10px] font-bold text-emerald-300 shadow-xl backdrop-blur-md transition-all duration-150",
                 activeResizeTarget === "1x2-col"
-                  ? "opacity-100"
-                  : "opacity-0 group-hover/split:opacity-100"
+                  ? "opacity-100 scale-100"
+                  : "opacity-0 scale-95 group-hover/split:opacity-100 group-hover/split:scale-100"
               )}
             >
               {Math.round(split1x2Ratio)}% : {100 - Math.round(split1x2Ratio)}%
             </div>
 
-            <div className="pointer-events-auto absolute top-1/2 left-6 -translate-y-1/2 hidden group-hover/split:flex items-center gap-1 rounded-lg border border-zinc-200/90 bg-white/95 p-1 shadow-xl backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/95">
-              {[
-                { label: "50:50", ratio: 50 },
-                { label: "65:35", ratio: 65 },
-                { label: "35:65", ratio: 35 },
-              ].map((snap) => (
-                <button
-                  key={snap.label}
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSplit1x2Ratio(snap.ratio);
-                    toast.info(`Split set to ${snap.label}`);
-                  }}
-                  className={cn(
-                    "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
-                    Math.round(split1x2Ratio) === snap.ratio
-                      ? "bg-emerald-600 text-white"
-                      : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                  )}
-                >
-                  {snap.label}
-                </button>
-              ))}
-            </div>
+            {/* Quick Snap Controls */}
+            {!activeResizeTarget && (
+              <div className="pointer-events-auto absolute top-1/2 left-6 -translate-y-1/2 hidden group-hover/split:flex items-center gap-1 rounded-xl border border-zinc-200/90 bg-white/95 p-1 shadow-xl backdrop-blur-md animate-in fade-in-0 zoom-in-95 duration-150 dark:border-zinc-800 dark:bg-zinc-900/95">
+                {[
+                  { label: "50:50", ratio: 50 },
+                  { label: "65:35", ratio: 65 },
+                  { label: "35:65", ratio: 35 },
+                ].map((snap) => (
+                  <button
+                    key={snap.label}
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSplit1x2Ratio(snap.ratio);
+                      toast.info(`Split set to ${snap.label}`);
+                    }}
+                    className={cn(
+                      "rounded-lg px-2 py-0.5 font-mono text-[10px] font-bold transition",
+                      Math.round(split1x2Ratio) === snap.ratio
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    )}
+                  >
+                    {snap.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1065,7 +1072,7 @@ export function StreamGrid() {
             role="separator"
             aria-orientation="horizontal"
             aria-label="Resize 1x2 screen split (double-click to reset)"
-            style={{ top: `calc(${split1x2Ratio}% - 8px)` }}
+            style={{ top: `${split1x2Ratio}%` }}
             onPointerDown={(e) => {
               e.preventDefault();
               setActiveResizeTarget("1x2-row");
@@ -1077,19 +1084,25 @@ export function StreamGrid() {
             }}
             title="Drag to resize screens"
             className={cn(
-              "group/split absolute inset-x-1 z-30 flex h-4 cursor-row-resize items-center justify-center md:hidden",
+              "group/split absolute inset-x-1.5 z-30 flex h-5 -translate-y-1/2 cursor-row-resize items-center justify-center md:hidden transition-colors duration-150",
               activeResizeTarget === "1x2-row" && "bg-emerald-500/10"
             )}
           >
             <div
               className={cn(
-                "h-1 w-full rounded-full transition-all duration-150",
+                "h-0.5 w-full rounded-full transition-all duration-200",
                 activeResizeTarget === "1x2-row"
-                  ? "h-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
-                  : "bg-zinc-300/60 dark:bg-zinc-700/60"
+                  ? "h-1 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.85)]"
+                  : "bg-zinc-300/60 dark:bg-zinc-800/80 group-hover/split:h-1 group-hover/split:bg-emerald-400"
               )}
             />
-            <div className="absolute flex h-4 w-11 items-center justify-center rounded-full border border-zinc-300/90 bg-white/95 text-zinc-600 shadow-md backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300">
+            <div
+              className={cn(
+                "absolute flex h-4.5 w-9 items-center justify-center rounded-full border border-zinc-300/80 bg-white/95 text-zinc-500 shadow-sm backdrop-blur-md transition-all duration-150 group-hover/split:scale-105 group-hover/split:border-emerald-500/80 group-hover/split:bg-zinc-950 group-hover/split:text-emerald-400 dark:border-zinc-700/80 dark:bg-zinc-900/90 dark:text-zinc-400",
+                activeResizeTarget === "1x2-row" &&
+                  "scale-110 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_14px_rgba(16,185,129,0.6)] ring-2 ring-emerald-500/30"
+              )}
+            >
               <GripHorizontal className="size-3" />
             </div>
           </div>
@@ -1101,7 +1114,7 @@ export function StreamGrid() {
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize Main Stage split (double-click to reset)"
-            style={{ left: `calc(${mainStageRatio}% - 8px)` }}
+            style={{ left: `${mainStageRatio}%` }}
             onPointerDown={(e) => {
               e.preventDefault();
               setActiveResizeTarget("stage-col");
@@ -1113,23 +1126,23 @@ export function StreamGrid() {
             }}
             title="Drag to resize Main Stage vs side feeds (double-click to reset)"
             className={cn(
-              "group/split absolute inset-y-1 z-30 hidden w-4 cursor-col-resize items-center justify-center md:flex",
+              "group/split absolute inset-y-1.5 z-30 hidden w-5 -translate-x-1/2 cursor-col-resize items-center justify-center md:flex transition-colors duration-150",
               activeResizeTarget === "stage-col" && "bg-emerald-500/10"
             )}
           >
             <div
               className={cn(
-                "h-full w-1 rounded-full transition-all duration-150",
+                "h-full w-0.5 rounded-full transition-all duration-200",
                 activeResizeTarget === "stage-col"
-                  ? "w-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
-                  : "bg-zinc-300/60 dark:bg-zinc-700/60 group-hover/split:bg-emerald-400 group-hover/split:shadow-[0_0_8px_rgba(16,185,129,0.7)]"
+                  ? "w-1 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.85)]"
+                  : "bg-zinc-300/60 dark:bg-zinc-800/80 group-hover/split:w-1 group-hover/split:bg-emerald-400 group-hover/split:shadow-[0_0_8px_rgba(16,185,129,0.5)]"
               )}
             />
             <div
               className={cn(
-                "absolute flex h-11 w-4 items-center justify-center rounded-full border border-zinc-300/90 bg-white/95 text-zinc-600 shadow-md backdrop-blur-md transition-all duration-150 group-hover/split:scale-110 group-hover/split:border-emerald-500 group-hover/split:bg-zinc-950 group-hover/split:text-emerald-400 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300",
+                "absolute flex h-9 w-4.5 items-center justify-center rounded-full border border-zinc-300/80 bg-white/95 text-zinc-500 shadow-sm backdrop-blur-md transition-all duration-150 group-hover/split:scale-105 group-hover/split:border-emerald-500/80 group-hover/split:bg-zinc-950 group-hover/split:text-emerald-400 group-hover/split:shadow-[0_0_12px_rgba(16,185,129,0.4)] dark:border-zinc-700/80 dark:bg-zinc-900/90 dark:text-zinc-400",
                 activeResizeTarget === "stage-col" &&
-                  "scale-110 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+                  "scale-110 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_14px_rgba(16,185,129,0.6)] ring-2 ring-emerald-500/30"
               )}
             >
               <GripVertical className="size-3" />
@@ -1137,41 +1150,43 @@ export function StreamGrid() {
 
             <div
               className={cn(
-                "pointer-events-none absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-emerald-500/40 bg-zinc-950/95 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-300 shadow-lg backdrop-blur-md transition-opacity duration-150",
+                "pointer-events-none absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-emerald-500/40 bg-zinc-950/95 px-2.5 py-0.5 font-mono text-[10px] font-bold text-emerald-300 shadow-xl backdrop-blur-md transition-all duration-150",
                 activeResizeTarget === "stage-col"
-                  ? "opacity-100"
-                  : "opacity-0 group-hover/split:opacity-100"
+                  ? "opacity-100 scale-100"
+                  : "opacity-0 scale-95 group-hover/split:opacity-100 group-hover/split:scale-100"
               )}
             >
               Stage {Math.round(mainStageRatio)}% : {100 - Math.round(mainStageRatio)}%
             </div>
 
-            <div className="pointer-events-auto absolute top-1/2 left-6 -translate-y-1/2 hidden group-hover/split:flex items-center gap-1 rounded-lg border border-zinc-200/90 bg-white/95 p-1 shadow-xl backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/95">
-              {[
-                { label: "70%", ratio: 70 },
-                { label: "80%", ratio: 80 },
-                { label: "60%", ratio: 60 },
-              ].map((snap) => (
-                <button
-                  key={snap.label}
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMainStageRatio(snap.ratio);
-                    toast.info(`Main stage set to ${snap.label}`);
-                  }}
-                  className={cn(
-                    "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition",
-                    Math.round(mainStageRatio) === snap.ratio
-                      ? "bg-emerald-600 text-white"
-                      : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                  )}
-                >
-                  {snap.label}
-                </button>
-              ))}
-            </div>
+            {!activeResizeTarget && (
+              <div className="pointer-events-auto absolute top-1/2 left-6 -translate-y-1/2 hidden group-hover/split:flex items-center gap-1 rounded-xl border border-zinc-200/90 bg-white/95 p-1 shadow-xl backdrop-blur-md animate-in fade-in-0 zoom-in-95 duration-150 dark:border-zinc-800 dark:bg-zinc-900/95">
+                {[
+                  { label: "70%", ratio: 70 },
+                  { label: "80%", ratio: 80 },
+                  { label: "60%", ratio: 60 },
+                ].map((snap) => (
+                  <button
+                    key={snap.label}
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMainStageRatio(snap.ratio);
+                      toast.info(`Main stage set to ${snap.label}`);
+                    }}
+                    className={cn(
+                      "rounded-lg px-2 py-0.5 font-mono text-[10px] font-bold transition",
+                      Math.round(mainStageRatio) === snap.ratio
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    )}
+                  >
+                    {snap.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1183,7 +1198,7 @@ export function StreamGrid() {
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize 2x2 columns (double-click to reset)"
-              style={{ left: `calc(${grid2x2ColRatio}% - 8px)` }}
+              style={{ left: `${grid2x2ColRatio}%` }}
               onPointerDown={(e) => {
                 e.preventDefault();
                 setActiveResizeTarget("2x2-col");
@@ -1195,16 +1210,16 @@ export function StreamGrid() {
               }}
               title="Drag to resize columns (double-click to reset to 50:50)"
               className={cn(
-                "group/split absolute inset-y-1 z-30 hidden w-4 cursor-col-resize items-center justify-center sm:flex",
+                "group/split absolute inset-y-1.5 z-30 hidden w-5 -translate-x-1/2 cursor-col-resize items-center justify-center sm:flex transition-colors duration-150",
                 activeResizeTarget === "2x2-col" && "bg-emerald-500/10"
               )}
             >
               <div
                 className={cn(
-                  "h-full w-1 rounded-full transition-all duration-150",
+                  "h-full w-0.5 rounded-full transition-all duration-200",
                   activeResizeTarget === "2x2-col"
-                    ? "w-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
-                    : "bg-zinc-300/60 dark:bg-zinc-700/60 group-hover/split:bg-emerald-400"
+                    ? "w-1 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.85)]"
+                    : "bg-zinc-300/60 dark:bg-zinc-800/80 group-hover/split:w-1 group-hover/split:bg-emerald-400 group-hover/split:shadow-[0_0_8px_rgba(16,185,129,0.5)]"
                 )}
               />
             </div>
@@ -1214,7 +1229,7 @@ export function StreamGrid() {
               role="separator"
               aria-orientation="horizontal"
               aria-label="Resize 2x2 rows (double-click to reset)"
-              style={{ top: `calc(${grid2x2RowRatio}% - 8px)` }}
+              style={{ top: `${grid2x2RowRatio}%` }}
               onPointerDown={(e) => {
                 e.preventDefault();
                 setActiveResizeTarget("2x2-row");
@@ -1226,16 +1241,16 @@ export function StreamGrid() {
               }}
               title="Drag to resize rows (double-click to reset to 50:50)"
               className={cn(
-                "group/split absolute inset-x-1 z-30 hidden h-4 cursor-row-resize items-center justify-center sm:flex",
+                "group/split absolute inset-x-1.5 z-30 hidden h-5 -translate-y-1/2 cursor-row-resize items-center justify-center sm:flex transition-colors duration-150",
                 activeResizeTarget === "2x2-row" && "bg-emerald-500/10"
               )}
             >
               <div
                 className={cn(
-                  "h-1 w-full rounded-full transition-all duration-150",
+                  "h-0.5 w-full rounded-full transition-all duration-200",
                   activeResizeTarget === "2x2-row"
-                    ? "h-1.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]"
-                    : "bg-zinc-300/60 dark:bg-zinc-700/60 group-hover/split:bg-emerald-400"
+                    ? "h-1 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.85)]"
+                    : "bg-zinc-300/60 dark:bg-zinc-800/80 group-hover/split:h-1 group-hover/split:bg-emerald-400 group-hover/split:shadow-[0_0_8px_rgba(16,185,129,0.5)]"
                 )}
               />
             </div>
@@ -1245,8 +1260,8 @@ export function StreamGrid() {
               role="button"
               aria-label="Resize 2x2 grid (drag both axes, double-click to reset)"
               style={{
-                left: `calc(${grid2x2ColRatio}% - 14px)`,
-                top: `calc(${grid2x2RowRatio}% - 14px)`,
+                left: `${grid2x2ColRatio}%`,
+                top: `${grid2x2RowRatio}%`,
               }}
               onPointerDown={(e) => {
                 e.preventDefault();
@@ -1259,9 +1274,9 @@ export function StreamGrid() {
               }}
               title="Drag to resize all 4 quadrants (double-click to reset to 50:50)"
               className={cn(
-                "group/center absolute z-35 hidden size-7 cursor-move items-center justify-center rounded-full border border-zinc-300/90 bg-white/95 text-zinc-600 shadow-lg backdrop-blur-md transition-all hover:scale-125 hover:border-emerald-500 hover:bg-zinc-950 hover:text-emerald-400 sm:flex dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300",
+                "group/center absolute z-35 hidden size-7 -translate-x-1/2 -translate-y-1/2 cursor-move items-center justify-center rounded-full border border-zinc-300/90 bg-white/95 text-zinc-600 shadow-lg backdrop-blur-md transition-all hover:scale-115 hover:border-emerald-500 hover:bg-zinc-950 hover:text-emerald-400 sm:flex dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300",
                 activeResizeTarget === "2x2-both" &&
-                  "scale-125 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_14px_rgba(16,185,129,0.7)]"
+                  "scale-120 border-emerald-500 bg-zinc-950 text-emerald-400 shadow-[0_0_14px_rgba(16,185,129,0.7)] ring-2 ring-emerald-500/30"
               )}
             >
               <Move className="size-3.5" />

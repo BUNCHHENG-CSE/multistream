@@ -63,13 +63,28 @@ async function ExploreContent() {
 
 function ExploreLoadingFallback() {
   return (
-    <div className="bg-studio-grid flex h-screen w-screen flex-col items-center justify-center gap-3 bg-background text-zinc-500 dark:text-zinc-400">
-      <div className="flex size-12 items-center justify-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <Compass className="size-6 animate-pulse text-emerald-600 dark:text-emerald-400" />
+    <div className="bg-studio-grid relative flex h-screen w-screen flex-col items-center justify-center gap-4 bg-zinc-950 text-zinc-400">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-[400px] w-[600px] -translate-x-1/2 rounded-full bg-emerald-500/10 blur-3xl"
+      />
+
+      <div className="relative flex size-16 items-center justify-center rounded-2xl border border-white/10 bg-zinc-900/90 shadow-2xl backdrop-blur-xl">
+        <Compass className="size-7 animate-pulse text-emerald-400" />
+        <span className="absolute -top-1 -right-1 flex size-3">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex size-3 rounded-full bg-emerald-500" />
+        </span>
       </div>
-      <div className="flex items-center gap-2 text-xs font-medium">
-        <Radio className="size-3.5 animate-spin text-emerald-600 dark:text-emerald-400" />
-        Loading Community Wall Directory...
+
+      <div className="flex flex-col items-center gap-1.5 text-center">
+        <div className="flex items-center gap-2 font-mono text-xs font-bold tracking-wider text-zinc-200 uppercase">
+          <Radio className="size-3.5 animate-spin text-emerald-400" />
+          Connecting Wall Directory
+        </div>
+        <p className="font-mono text-[11px] text-zinc-500">
+          Syncing curated stream presets & community stages...
+        </p>
       </div>
     </div>
   );
