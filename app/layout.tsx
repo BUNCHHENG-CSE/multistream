@@ -93,7 +93,7 @@ export const metadata: Metadata = {
   verification: {
     google:
       process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION ||
-      "google8886b9f17b3d1ba2",
+      "google6ea4c998f6ee953c",
   },
   manifest: "/manifest.webmanifest",
 };
