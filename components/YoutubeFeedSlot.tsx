@@ -14,6 +14,7 @@ import {
   Play,
   X,
   ChevronLeft,
+  ChevronRight,
   Flame,
   Sparkles,
   LogOut,
@@ -144,11 +145,63 @@ export function YoutubeFeedSlot({
     isGoogleConfigured: false,
   });
 
+  const [canScrollChipsLeft, setCanScrollChipsLeft] = useState(false);
+  const [canScrollChipsRight, setCanScrollChipsRight] = useState(false);
+
   const chipsContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const checkChipsScroll = useCallback(() => {
+    const el = chipsContainerRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollChipsLeft(scrollLeft > 2);
+    setCanScrollChipsRight(scrollLeft + clientWidth < scrollWidth - 2);
+  }, []);
+
+  const scrollChips = (direction: "left" | "right") => {
+    const el = chipsContainerRef.current;
+    if (!el) return;
+    const amount = 180;
+    el.scrollBy({
+      left: direction === "left" ? -amount : amount,
+      behavior: "smooth",
+    });
+  };
+
+  const handleChipsWheel = (e: React.WheelEvent) => {
+    if (e.deltaY !== 0) {
+      chipsContainerRef.current?.scrollBy({
+        left: e.deltaY * 0.8,
+        behavior: "auto",
+      });
+    }
+  };
+
+  useEffect(() => {
+    const el = chipsContainerRef.current;
+    if (!el) return;
+
+    checkChipsScroll();
+
+    el.addEventListener("scroll", checkChipsScroll, { passive: true });
+    window.addEventListener("resize", checkChipsScroll);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => checkChipsScroll());
+      ro.observe(el);
+    }
+
+    return () => {
+      el.removeEventListener("scroll", checkChipsScroll);
+      window.removeEventListener("resize", checkChipsScroll);
+      ro?.disconnect();
+    };
+  }, [checkChipsScroll, authStatus.hasYouTubeScope]);
 
   const activeIds = new Set(streams.map((s) => s.videoId));
 
@@ -795,10 +848,25 @@ export function YoutubeFeedSlot({
       </div>
 
       {/* ── Category Chips Bar (Scrollable horizontally with smooth touch/mouse scroll) ── */}
-      <div className="relative flex shrink-0 items-center border-b border-zinc-800/80 bg-[#0f0f0f] px-2 py-1.5">
+      <div className="relative flex shrink-0 items-center border-b border-zinc-800/80 bg-[#0f0f0f] px-1.5 py-1.5">
+        {/* Left Scroll Chevron with Gradient Fade */}
+        {canScrollChipsLeft && (
+          <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center pr-8 pl-1 bg-gradient-to-r from-[#0f0f0f] via-[#0f0f0f]/95 to-transparent pointer-events-none">
+            <button
+              type="button"
+              onClick={() => scrollChips("left")}
+              title="Previous categories"
+              className="pointer-events-auto flex size-7 items-center justify-center rounded-full bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/60 text-white shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+          </div>
+        )}
+
         <div
           ref={chipsContainerRef}
-          className="flex flex-1 items-center gap-1.5 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onWheel={handleChipsWheel}
+          className="flex flex-1 items-center gap-1.5 overflow-x-auto px-1 no-scrollbar scroll-smooth"
         >
           {categoriesList.map((category) => {
             const isActive = activeCategory === category;
@@ -843,6 +911,20 @@ export function YoutubeFeedSlot({
             );
           })}
         </div>
+
+        {/* Right Scroll Chevron with Gradient Fade */}
+        {canScrollChipsRight && (
+          <div className="absolute right-0 top-0 bottom-0 z-10 flex items-center pl-8 pr-1 bg-gradient-to-l from-[#0f0f0f] via-[#0f0f0f]/95 to-transparent pointer-events-none">
+            <button
+              type="button"
+              onClick={() => scrollChips("right")}
+              title="Next categories"
+              className="pointer-events-auto flex size-7 items-center justify-center rounded-full bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/60 text-white shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Google Sign-In & Sync Banner for Guest ── */}
