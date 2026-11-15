@@ -281,19 +281,47 @@ export function YoutubeFeedSlot({
 
     setIsSigningIn(true);
     try {
-      const res = await authClient.signIn.social({
-        provider: "google",
-        callbackURL: window.location.href,
-      });
+      if (authStatus.isLoggedIn) {
+        // When logged in, linkSocial asks for and merges the youtube.readonly scope
+        const res = await authClient.linkSocial({
+          provider: "google",
+          callbackURL: window.location.href,
+        });
 
-      if (res?.data?.url) {
-        window.location.href = res.data.url;
-        return;
-      }
+        if (res?.data?.url) {
+          window.location.href = res.data.url;
+          return;
+        }
 
-      if (res?.error) {
-        toast.error(res.error.message || "Failed to start Google authentication");
-        setIsSigningIn(false);
+        if (res?.error) {
+          // If linkSocial encounters an issue, fallback to signIn.social
+          const fallbackRes = await authClient.signIn.social({
+            provider: "google",
+            callbackURL: window.location.href,
+          });
+          if (fallbackRes?.data?.url) {
+            window.location.href = fallbackRes.data.url;
+            return;
+          }
+          toast.error(res.error.message || "Failed to start Google authentication");
+          setIsSigningIn(false);
+          return;
+        }
+      } else {
+        const res = await authClient.signIn.social({
+          provider: "google",
+          callbackURL: window.location.href,
+        });
+
+        if (res?.data?.url) {
+          window.location.href = res.data.url;
+          return;
+        }
+
+        if (res?.error) {
+          toast.error(res.error.message || "Failed to start Google authentication");
+          setIsSigningIn(false);
+        }
       }
     } catch (err) {
       console.error("Google sign-in error:", err);

@@ -53,6 +53,8 @@ const trustedOrigins = Array.from(
   new Set(
     [
       resolvedBaseUrl,
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
       "https://tct-multistream.vercel.app",
       normalizeUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL),
       normalizeUrl(process.env.VERCEL_URL),
@@ -71,6 +73,12 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+  },
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["google", "github"],
+    },
   },
   socialProviders: {
     ...(githubClientId && githubClientSecret
