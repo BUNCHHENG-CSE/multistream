@@ -762,6 +762,12 @@ export const StreamPlayer = React.memo(function StreamPlayer({
           </Badge>
         )}
 
+        {isPaused && (
+          <Badge className="border-amber-500/40 bg-amber-950/90 px-2 py-0.5 text-[10px] font-semibold text-amber-300 backdrop-blur-md">
+            PAUSED
+          </Badge>
+        )}
+
         {isYouTube && (
           <Badge
             variant="secondary"
@@ -792,11 +798,11 @@ export const StreamPlayer = React.memo(function StreamPlayer({
         )}
       </div>
 
-      {/* Auto-hiding Floating Glassmorphic HUD Header */}
+      {/* Auto-hiding Floating Glassmorphic HUD Header (Single-line, Zero-wrap) */}
       <div
         className={cn(
-          "absolute inset-x-0 top-0 z-30 flex flex-wrap items-center justify-between gap-2 bg-gradient-to-b from-black/95 via-black/80 to-transparent px-2.5 py-2.5 opacity-0 transition-opacity duration-200 group-hover/tile:opacity-100 focus-within:opacity-100",
-          isSettingsOpen && "opacity-100"
+          "absolute inset-x-0 top-0 z-30 flex items-center justify-between gap-2 bg-gradient-to-b from-black/95 via-black/80 to-transparent px-2.5 pb-6 pt-2 text-zinc-100 opacity-0 transition-opacity duration-200 group-hover/tile:opacity-100 focus-within:opacity-100",
+          (isSettingsOpen || isEditingLabel) && "opacity-100"
         )}
       >
         {/* Left: Drag Handle + Stream Index + Platform + Editable Label */}
@@ -845,7 +851,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                 onChange={(e) => setDraftLabel(e.target.value)}
                 onBlur={handleSaveLabel}
                 autoFocus
-                className="h-6 w-full max-w-[200px] rounded-md border border-zinc-700 bg-zinc-900/95 px-2 text-xs text-zinc-100 outline-none focus:border-emerald-500"
+                className="h-6 w-full max-w-[180px] rounded-md border border-zinc-700 bg-zinc-900/95 px-2 text-xs text-zinc-100 outline-none focus:border-emerald-500"
               />
               <Button
                 type="submit"
@@ -857,9 +863,9 @@ export const StreamPlayer = React.memo(function StreamPlayer({
               </Button>
             </form>
           ) : (
-            <div className="flex min-w-0 items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1">
               <span
-                className="truncate text-xs font-semibold text-zinc-100 drop-shadow"
+                className="max-w-[120px] truncate text-xs font-semibold text-zinc-100 drop-shadow sm:max-w-[180px] md:max-w-[260px]"
                 title={stream.label}
               >
                 {stream.label}
@@ -870,7 +876,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                   setDraftLabel(stream.label);
                   setIsEditingLabel(true);
                 }}
-                className="rounded p-0.5 text-zinc-400 opacity-75 transition hover:bg-white/10 hover:text-zinc-100 hover:opacity-100"
+                className="rounded p-0.5 text-zinc-400 opacity-60 transition hover:bg-white/10 hover:text-zinc-100 hover:opacity-100"
                 title="Rename stream label"
               >
                 <Pencil className="size-3" />
@@ -879,11 +885,11 @@ export const StreamPlayer = React.memo(function StreamPlayer({
           )}
         </div>
 
-        {/* Right: Smart Broadcast Controls */}
+        {/* Right: Streamlined Control Bar (Essential Quick Actions + Organized Menu) */}
         <div className="flex shrink-0 items-center gap-1">
           {/* 1. Solo Focus + Independent Audio Mute/Unmute + Volume Slider */}
           {isYouTube && (
-            <div className="flex items-center gap-1 rounded-lg bg-zinc-900/90 p-0.5 ring-1 ring-white/10 backdrop-blur-md">
+            <div className="flex items-center rounded-md bg-zinc-900/90 p-0.5 ring-1 ring-white/10 backdrop-blur-md">
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -905,10 +911,10 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                         }
                       }}
                       className={cn(
-                        "h-6 gap-1 rounded-md px-2 text-[11px] font-semibold shadow-2xs",
+                        "h-6 gap-1 rounded-sm px-2 text-[11px] font-semibold transition-all shadow-2xs",
                         isFocused
                           ? "bg-emerald-600 text-white hover:bg-emerald-500"
-                          : "bg-transparent text-zinc-200 hover:bg-zinc-800"
+                          : "bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white"
                       )}
                     />
                   }
@@ -919,14 +925,14 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                       isFocused ? "text-white" : "text-emerald-400"
                     )}
                   />
-                  <span className="hidden sm:inline">
+                  <span>
                     {isFocused ? "Solo On" : "Solo"}
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
                   {isFocused
                     ? "Exit Solo Focus (restore equal volume, quality & grid size)"
-                    : "Solo Focus: 100% audio & HD here, 50% volume, Eco quality & half size on others"}
+                    : "Solo Focus: 100% audio & HD here, duck other streams"}
                 </TooltipContent>
               </Tooltip>
 
@@ -946,7 +952,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                         }
                       }}
                       className={cn(
-                        "size-6 rounded-md",
+                        "size-6 rounded-sm transition-colors",
                         isAudioActive
                           ? "text-emerald-400 hover:bg-zinc-800 hover:text-emerald-300"
                           : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
@@ -981,287 +987,13 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                       ? `Volume: ${effectiveVolume}% (50% Half Mode)`
                       : `Volume: ${effectiveVolume}%`
                   }
-                  className="mr-1.5 hidden h-1 w-14 cursor-pointer appearance-none rounded-full bg-zinc-700 accent-emerald-400 md:inline-block"
+                  className="mr-1 hidden h-1 w-12 cursor-pointer appearance-none rounded-full bg-zinc-700 accent-emerald-400 sm:inline-block"
                 />
               )}
             </div>
           )}
 
-          {/* 2. Play / Pause Toggle (YouTube) */}
-          {isYouTube && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="secondary"
-                    onClick={handleTogglePlayPause}
-                    className="bg-zinc-900/90 text-zinc-200 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-white"
-                  />
-                }
-              >
-                {isPaused ? (
-                  <Play className="size-3 fill-current text-emerald-400" />
-                ) : (
-                  <Pause className="size-3" />
-                )}
-              </TooltipTrigger>
-              <TooltipContent>
-                {isPaused ? "Resume stream playback" : "Pause stream playback"}
-              </TooltipContent>
-            </Tooltip>
-          )}
-
-          {/* 2b. Playback Speed & Quality Settings Menu (YouTube) */}
-          {isYouTube && (
-            <DropdownMenu
-              open={isSettingsOpen}
-              onOpenChange={setIsSettingsOpen}
-            >
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          type="button"
-                          size="icon-xs"
-                          variant="secondary"
-                          className={cn(
-                            "bg-zinc-900/90 text-zinc-200 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-white",
-                            (qualitySetting !== "auto" || playbackRate !== 1) &&
-                              "text-emerald-300 ring-emerald-500/40"
-                          )}
-                        />
-                      }
-                    >
-                      <Settings className="size-3.5" />
-                    </DropdownMenuTrigger>
-                  }
-                />
-                <TooltipContent>
-                  Playback speed & Quality settings
-                </TooltipContent>
-              </Tooltip>
-
-              <DropdownMenuContent
-                align="end"
-                sideOffset={6}
-                className="w-64 rounded-xl border border-white/15 bg-zinc-900/95 p-1.5 text-zinc-100 shadow-2xl backdrop-blur-xl"
-              >
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
-                    Stream Optimization
-                  </DropdownMenuLabel>
-
-                  {/* Playback speed submenu */}
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="cursor-pointer rounded-lg px-2.5 py-2 text-xs text-zinc-100 focus:bg-white/10 focus:text-white data-open:bg-white/10 data-open:text-white">
-                      <Gauge className="size-4 text-zinc-300" />
-                      <span>Playback speed</span>
-                      <span className="ml-auto pr-1 text-xs text-zinc-400">
-                        {speedSummaryLabel}
-                      </span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="w-44 rounded-xl border border-white/15 bg-zinc-900/95 p-1 text-zinc-100 shadow-2xl backdrop-blur-xl">
-                      <DropdownMenuRadioGroup
-                        value={String(playbackRate)}
-                        onValueChange={(value) => {
-                          const next = Number(value);
-                          if (!Number.isNaN(next)) {
-                            handlePlaybackRateChange(next);
-                          }
-                        }}
-                      >
-                        {YOUTUBE_PLAYBACK_SPEEDS.map((option) => (
-                          <DropdownMenuRadioItem
-                            key={option.value}
-                            value={String(option.value)}
-                            className="cursor-pointer rounded-lg py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white"
-                          >
-                            {option.label}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-
-                  {/* Quality submenu */}
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="cursor-pointer rounded-lg px-2.5 py-2 text-xs text-zinc-100 focus:bg-white/10 focus:text-white data-open:bg-white/10 data-open:text-white">
-                      <SlidersHorizontal className="size-4 text-zinc-300" />
-                      <span>Quality</span>
-                      <span className="ml-auto pr-1 text-xs text-zinc-400">
-                        {qualitySummaryLabel}
-                      </span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="w-48 rounded-xl border border-white/15 bg-zinc-900/95 p-1 text-zinc-100 shadow-2xl backdrop-blur-xl">
-                      <DropdownMenuRadioGroup
-                        value={qualitySetting}
-                        onValueChange={(value) => {
-                          handleQualityChange(value as YouTubeQualityLevel);
-                        }}
-                      >
-                        {YOUTUBE_QUALITY_OPTIONS.map((option) => (
-                          <DropdownMenuRadioItem
-                            key={option.value}
-                            value={option.value}
-                            className="cursor-pointer rounded-lg py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white"
-                          >
-                            {option.label}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                </DropdownMenuGroup>
-
-                <DropdownMenuSeparator className="my-1 bg-white/10" />
-
-                {gridPreset === "1x2" && (
-                  <>
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
-                        Screen Sizing (1x2 Split)
-                      </DropdownMenuLabel>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          const target = index === 0 ? 65 : 35;
-                          useStreamStore.getState().setSplit1x2Ratio(target);
-                          toast.success(`Enlarged ${stream.label} to 65%`);
-                        }}
-                        className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-emerald-300 focus:bg-emerald-500/15 focus:text-emerald-200"
-                      >
-                        <Maximize2 className="size-3.5 text-emerald-400" />
-                        <span>Enlarge Screen (65% Focus)</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          useStreamStore.getState().setSplit1x2Ratio(50);
-                          toast.info("Equalized dual screens (50:50)");
-                        }}
-                        className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs text-zinc-300 focus:bg-white/10 focus:text-white"
-                      >
-                        <RotateCcw className="size-3.5 text-zinc-400" />
-                        <span>Equalize Screens (50:50)</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
-                    <DropdownMenuSeparator className="my-1 bg-white/10" />
-                  </>
-                )}
-
-                {gridPreset === "1+3" && (
-                  <>
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
-                        Stage Sizing (1+3)
-                      </DropdownMenuLabel>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          useStreamStore.getState().setMainStageRatio(80);
-                          toast.success("Enlarged Main Stage to 80%");
-                        }}
-                        className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-emerald-300 focus:bg-emerald-500/15 focus:text-emerald-200"
-                      >
-                        <Maximize2 className="size-3.5 text-emerald-400" />
-                        <span>Enlarge Main Stage (80%)</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          useStreamStore.getState().setMainStageRatio(70);
-                          toast.info("Reset Main Stage to 70%");
-                        }}
-                        className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs text-zinc-300 focus:bg-white/10 focus:text-white"
-                      >
-                        <RotateCcw className="size-3.5 text-zinc-400" />
-                        <span>Default Stage (70%)</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
-                    <DropdownMenuSeparator className="my-1 bg-white/10" />
-                  </>
-                )}
-
-                <DropdownMenuGroup>
-                  <DropdownMenuItem
-                    onClick={handleOptimizeHalfPreset}
-                    className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-amber-300 focus:bg-amber-500/15 focus:text-amber-200"
-                  >
-                    <Zap className="size-3.5 text-amber-400" />
-                    <span>Optimize Half (360p • 50% Vol • 0.5x)</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={handleResetPlaybackDefaults}
-                    className="cursor-pointer gap-2 rounded-lg px-2.5 py-2 text-xs text-zinc-300 focus:bg-white/10 focus:text-white"
-                  >
-                    <RotateCcw className="size-3.5 text-zinc-400" />
-                    <span>Reset Default (Auto 720p60 • Normal)</span>
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {/* 2c. Reload Stream Feed */}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="secondary"
-                  onClick={handleReloadStream}
-                  className="bg-zinc-900/90 text-zinc-200 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-white"
-                />
-              }
-            >
-              <RotateCw className="size-3" />
-            </TooltipTrigger>
-            <TooltipContent>Reload player & resync stream</TooltipContent>
-          </Tooltip>
-
-          {/* 2d. Browse & Scroll YouTube Feed */}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="secondary"
-                  onClick={() => setIsBrowsingYouTube(true)}
-                  className="bg-zinc-900/90 text-red-400 ring-1 ring-white/10 hover:bg-red-600 hover:text-white"
-                />
-              }
-            >
-              <Play className="size-3 fill-current" />
-            </TooltipTrigger>
-            <TooltipContent>Browse & scroll YouTube feed to switch video</TooltipContent>
-          </Tooltip>
-
-          {/* 3. Swap to Main (shown when not in primary slot) */}
-          {index > 0 && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="secondary"
-                    onClick={() => {
-                      promoteToMain(stream.videoId);
-                      toast.info(`Promoted "${stream.label}" to Main Stage`);
-                    }}
-                    className="bg-zinc-900/90 text-zinc-200 ring-1 ring-white/10 hover:bg-amber-500/20 hover:text-amber-300"
-                  />
-                }
-              >
-                <ArrowUpLeft className="size-3.5" />
-              </TooltipTrigger>
-              <TooltipContent>Swap to Main Primary Stage</TooltipContent>
-            </Tooltip>
-          )}
-
-          {/* 4. Spotlight 1x1 Toggle */}
+          {/* 2. Spotlight 1x1 Cinema View */}
           {streamCount > 1 && (
             <Tooltip>
               <TooltipTrigger
@@ -1272,7 +1004,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                     variant="secondary"
                     onClick={handleToggleSingleSpotlight}
                     className={cn(
-                      "bg-zinc-900/90 text-zinc-200 ring-1 ring-white/10 hover:bg-emerald-500/20 hover:text-emerald-300",
+                      "bg-zinc-900/90 text-zinc-300 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-white",
                       gridPreset === "1x1" &&
                         "bg-emerald-500/20 text-emerald-300 ring-emerald-500/40"
                     )}
@@ -1280,9 +1012,9 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                 }
               >
                 {gridPreset === "1x1" ? (
-                  <Minimize2 className="size-3" />
+                  <Minimize2 className="size-3.5" />
                 ) : (
-                  <Maximize2 className="size-3" />
+                  <Maximize2 className="size-3.5" />
                 )}
               </TooltipTrigger>
               <TooltipContent>
@@ -1293,7 +1025,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
             </Tooltip>
           )}
 
-          {/* 5. Chat Focus */}
+          {/* 3. Live Chat Focus */}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1305,7 +1037,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                     setActiveChatStream(stream.videoId, true);
                   }}
                   className={cn(
-                    "bg-zinc-900/90 text-zinc-200 ring-1 ring-white/10 hover:bg-sky-500/20 hover:text-sky-300",
+                    "bg-zinc-900/90 text-zinc-300 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-white",
                     isChatFocused &&
                       "bg-sky-500/25 text-sky-300 ring-sky-500/50"
                   )}
@@ -1317,40 +1049,82 @@ export const StreamPlayer = React.memo(function StreamPlayer({
             <TooltipContent>Focus Live Chat on this stream</TooltipContent>
           </Tooltip>
 
-          {/* 5b. Quick Timestamp Bookmark */}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="secondary"
-                  onClick={() => {
-                    const bm = addBookmark(
-                      stream.videoId,
-                      `Moment captured on ${stream.label}`
-                    );
-                    if (bm) {
-                      toast.success(`Bookmarked [${bm.elapsedLabel}] on ${stream.label}`);
+          {/* 4. Consolidated Stream Options & Controls Menu */}
+          <DropdownMenu
+            open={isSettingsOpen}
+            onOpenChange={setIsSettingsOpen}
+          >
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon-xs"
+                        variant="secondary"
+                        className={cn(
+                          "relative bg-zinc-900/90 text-zinc-300 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-white",
+                          (qualitySetting !== "auto" ||
+                            playbackRate !== 1 ||
+                            isDockedInPip ||
+                            isPaused) &&
+                            "text-emerald-300 ring-emerald-500/40"
+                        )}
+                      />
                     }
-                  }}
-                  className="bg-zinc-900/90 text-zinc-200 ring-1 ring-white/10 hover:bg-amber-500/20 hover:text-amber-300"
-                />
-              }
-            >
-              <Bookmark className="size-3" />
-            </TooltipTrigger>
-            <TooltipContent>Log timestamp bookmark on this feed</TooltipContent>
-          </Tooltip>
+                  >
+                    <MoreHorizontal className="size-3.5" />
+                    {(qualitySetting !== "auto" ||
+                      playbackRate !== 1 ||
+                      isDockedInPip) && (
+                      <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-emerald-400" />
+                    )}
+                  </DropdownMenuTrigger>
+                }
+              />
+              <TooltipContent>Stream options & settings</TooltipContent>
+            </Tooltip>
 
-          {/* 5c. Floating PiP Mini-Player Toggle */}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="secondary"
+            <DropdownMenuContent
+              align="end"
+              sideOffset={6}
+              className="w-64 rounded-xl border border-white/15 bg-zinc-900/95 p-1.5 text-zinc-100 shadow-2xl backdrop-blur-xl"
+            >
+              {/* Playback & Feed Actions */}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                  Playback & Feed
+                </DropdownMenuLabel>
+
+                {isYouTube && (
+                  <DropdownMenuItem
+                    onClick={handleTogglePlayPause}
+                    className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
+                  >
+                    {isPaused ? (
+                      <>
+                        <Play className="size-3.5 fill-current text-emerald-400" />
+                        <span>Resume Playback</span>
+                      </>
+                    ) : (
+                      <>
+                        <Pause className="size-3.5 text-zinc-300" />
+                        <span>Pause Playback</span>
+                      </>
+                    )}
+                  </DropdownMenuItem>
+                )}
+
+                <DropdownMenuItem
+                  onClick={handleReloadStream}
+                  className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
+                >
+                  <RotateCw className="size-3.5 text-zinc-300" />
+                  <span>Reload & Resync Stream</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
                   onClick={() => {
                     if (isDockedInPip) {
                       setPipVideoId(null);
@@ -1361,42 +1135,234 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                     }
                   }}
                   className={cn(
-                    "bg-zinc-900/90 text-zinc-200 ring-1 ring-white/10 hover:bg-emerald-500/20 hover:text-emerald-300",
-                    isDockedInPip &&
-                      "bg-emerald-500/25 text-emerald-300 ring-emerald-500/50"
+                    "cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white",
+                    isDockedInPip && "text-emerald-300"
                   )}
-                />
-              }
-            >
-              <PictureInPicture2 className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipContent>
-              {isDockedInPip
-                ? "Return stream from Floating PiP Dock"
-                : "Pop into draggable Floating PiP Mini-Player"}
-            </TooltipContent>
-          </Tooltip>
+                >
+                  <PictureInPicture2 className="size-3.5 text-zinc-300" />
+                  <span>
+                    {isDockedInPip
+                      ? "Return from PiP Dock"
+                      : "Float in PiP Mini-Player"}
+                  </span>
+                </DropdownMenuItem>
 
-          {/* 6. Open External Watch Page */}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <a
-                  href={getStreamExternalUrl(stream.videoId)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex size-6 items-center justify-center rounded-[min(var(--radius-md),8px)] bg-zinc-900/90 text-zinc-300 ring-1 ring-white/10 transition hover:bg-zinc-800 hover:text-white"
-                />
-              }
-            >
-              <ExternalLink className="size-3" />
-            </TooltipTrigger>
-            <TooltipContent>
-              Open watch page on {platformMeta.label}
-            </TooltipContent>
-          </Tooltip>
+                <DropdownMenuItem
+                  onClick={() => setIsBrowsingYouTube(true)}
+                  className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
+                >
+                  <Radio className="size-3.5 text-red-400" />
+                  <span>Browse & Switch Feed</span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
 
-          {/* 7. Remove Stream */}
+              <DropdownMenuSeparator className="my-1 bg-white/10" />
+
+              {/* Layout & Stage Positioning */}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                  Layout & Stage
+                </DropdownMenuLabel>
+
+                {index > 0 && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      promoteToMain(stream.videoId);
+                      toast.info(`Promoted "${stream.label}" to Main Stage`);
+                    }}
+                    className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 focus:bg-amber-500/15 focus:text-amber-200"
+                  >
+                    <ArrowUpLeft className="size-3.5 text-amber-400" />
+                    <span>Promote to Main Stage</span>
+                  </DropdownMenuItem>
+                )}
+
+                {gridPreset === "1x2" && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        const target = index === 0 ? 65 : 35;
+                        useStreamStore.getState().setSplit1x2Ratio(target);
+                        toast.success(`Enlarged ${stream.label} to 65%`);
+                      }}
+                      className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-300 focus:bg-emerald-500/15 focus:text-emerald-200"
+                    >
+                      <Maximize2 className="size-3.5 text-emerald-400" />
+                      <span>Enlarge Screen (65% Focus)</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        useStreamStore.getState().setSplit1x2Ratio(50);
+                        toast.info("Equalized dual screens (50:50)");
+                      }}
+                      className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:bg-white/10 focus:text-white"
+                    >
+                      <RotateCcw className="size-3.5 text-zinc-400" />
+                      <span>Equalize Screens (50:50)</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+
+                {gridPreset === "1+3" && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        useStreamStore.getState().setMainStageRatio(80);
+                        toast.success("Enlarged Main Stage to 80%");
+                      }}
+                      className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-300 focus:bg-emerald-500/15 focus:text-emerald-200"
+                    >
+                      <Maximize2 className="size-3.5 text-emerald-400" />
+                      <span>Enlarge Main Stage (80%)</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        useStreamStore.getState().setMainStageRatio(70);
+                        toast.info("Reset Main Stage to 70%");
+                      }}
+                      className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:bg-white/10 focus:text-white"
+                    >
+                      <RotateCcw className="size-3.5 text-zinc-400" />
+                      <span>Default Stage (70%)</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuGroup>
+
+              {isYouTube && (
+                <>
+                  <DropdownMenuSeparator className="my-1 bg-white/10" />
+
+                  {/* Quality & Speed */}
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                      Quality & Speed
+                    </DropdownMenuLabel>
+
+                    {/* Quality Submenu */}
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="cursor-pointer rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white data-open:bg-white/10 data-open:text-white">
+                        <SlidersHorizontal className="size-3.5 text-zinc-300" />
+                        <span>Quality</span>
+                        <span className="ml-auto pr-1 text-xs text-emerald-400">
+                          {qualitySummaryLabel}
+                        </span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-48 rounded-xl border border-white/15 bg-zinc-900/95 p-1 text-zinc-100 shadow-2xl backdrop-blur-xl">
+                        <DropdownMenuRadioGroup
+                          value={qualitySetting}
+                          onValueChange={(value) => {
+                            handleQualityChange(value as YouTubeQualityLevel);
+                          }}
+                        >
+                          {YOUTUBE_QUALITY_OPTIONS.map((option) => (
+                            <DropdownMenuRadioItem
+                              key={option.value}
+                              value={option.value}
+                              className="cursor-pointer rounded-lg py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white"
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+
+                    {/* Playback speed submenu */}
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="cursor-pointer rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white data-open:bg-white/10 data-open:text-white">
+                        <Gauge className="size-3.5 text-zinc-300" />
+                        <span>Speed</span>
+                        <span className="ml-auto pr-1 text-xs text-zinc-400">
+                          {speedSummaryLabel}
+                        </span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-44 rounded-xl border border-white/15 bg-zinc-900/95 p-1 text-zinc-100 shadow-2xl backdrop-blur-xl">
+                        <DropdownMenuRadioGroup
+                          value={String(playbackRate)}
+                          onValueChange={(value) => {
+                            const next = Number(value);
+                            if (!Number.isNaN(next)) {
+                              handlePlaybackRateChange(next);
+                            }
+                          }}
+                        >
+                          {YOUTUBE_PLAYBACK_SPEEDS.map((option) => (
+                            <DropdownMenuRadioItem
+                              key={option.value}
+                              value={String(option.value)}
+                              className="cursor-pointer rounded-lg py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white"
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+
+                    <DropdownMenuItem
+                      onClick={handleOptimizeHalfPreset}
+                      className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-amber-300 focus:bg-amber-500/15 focus:text-amber-200"
+                    >
+                      <Zap className="size-3.5 text-amber-400" />
+                      <span>Optimize Half (360p • 50% Vol)</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={handleResetPlaybackDefaults}
+                      className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:bg-white/10 focus:text-white"
+                    >
+                      <RotateCcw className="size-3.5 text-zinc-400" />
+                      <span>Reset Defaults</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </>
+              )}
+
+              <DropdownMenuSeparator className="my-1 bg-white/10" />
+
+              {/* Tools & Bookmarks */}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                  Tools & External
+                </DropdownMenuLabel>
+
+                <DropdownMenuItem
+                  onClick={() => {
+                    const bm = addBookmark(
+                      stream.videoId,
+                      `Moment captured on ${stream.label}`
+                    );
+                    if (bm) {
+                      toast.success(
+                        `Bookmarked [${bm.elapsedLabel}] on ${stream.label}`
+                      );
+                    }
+                  }}
+                  className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
+                >
+                  <Bookmark className="size-3.5 text-amber-400" />
+                  <span>Bookmark Timestamp</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  onClick={() => {
+                    window.open(
+                      getStreamExternalUrl(stream.videoId),
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+                  }}
+                  className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
+                >
+                  <ExternalLink className="size-3.5 text-zinc-300" />
+                  <span>Open on {platformMeta.label}</span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* 5. Remove Stream */}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1408,7 +1374,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                     removeStream(stream.videoId);
                     toast(`Removed "${stream.label}"`);
                   }}
-                  className="bg-zinc-900/90 text-zinc-300 ring-1 ring-white/10 hover:bg-red-500/25 hover:text-red-300"
+                  className="bg-zinc-900/90 text-zinc-400 ring-1 ring-white/10 hover:bg-red-500/25 hover:text-red-300"
                 />
               }
             >
