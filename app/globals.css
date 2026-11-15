@@ -230,14 +230,56 @@
   scrollbar-color: oklch(1 0 0 / 0.18) transparent;
 }
 
-/* Force hide scrollbars where needed */
-.no-scrollbar::-webkit-scrollbar {
+/* Universal no-scrollbar: completely hides scrollbar in all browsers */
+.no-scrollbar,
+.no-scrollbar *,
+.dark .no-scrollbar,
+.dark .no-scrollbar * {
+  scrollbar-width: none !important;
+  scrollbar-color: transparent transparent !important;
+  -ms-overflow-style: none !important;
+}
+
+.no-scrollbar::-webkit-scrollbar,
+.no-scrollbar *::-webkit-scrollbar,
+.dark .no-scrollbar::-webkit-scrollbar,
+.dark .no-scrollbar *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.no-scrollbar::-webkit-scrollbar-track,
+.no-scrollbar *::-webkit-scrollbar-track,
+.dark .no-scrollbar::-webkit-scrollbar-track,
+.dark .no-scrollbar *::-webkit-scrollbar-track {
+  display: none !important;
+  background: transparent !important;
+}
+
+.no-scrollbar::-webkit-scrollbar-thumb,
+.no-scrollbar *::-webkit-scrollbar-thumb,
+.dark .no-scrollbar::-webkit-scrollbar-thumb,
+.dark .no-scrollbar *::-webkit-scrollbar-thumb {
+  display: none !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.no-scrollbar::-webkit-scrollbar-button,
+.no-scrollbar *::-webkit-scrollbar-button,
+.dark .no-scrollbar::-webkit-scrollbar-button,
+.dark .no-scrollbar *::-webkit-scrollbar-button {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
 }
 
-.no-scrollbar {
-  -ms-overflow-style: none !important;
-  scrollbar-width: none !important;
+.no-scrollbar::-webkit-scrollbar-corner,
+.dark .no-scrollbar::-webkit-scrollbar-corner {
+  display: none !important;
 }

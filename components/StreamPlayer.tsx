@@ -34,6 +34,7 @@ import {
   Leaf,
   PictureInPicture2,
   Bookmark,
+  MoreHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";

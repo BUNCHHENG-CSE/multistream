@@ -849,6 +849,29 @@ export function YoutubeFeedSlot({
 
       {/* ── Category Chips Bar (Scrollable horizontally with smooth touch/mouse scroll) ── */}
       <div className="relative flex shrink-0 items-center border-b border-zinc-800/80 bg-[#0f0f0f] px-1.5 py-1.5">
+        <style>{`
+          .yt-chips-container::-webkit-scrollbar {
+            display: none !important;
+            width: 0px !important;
+            height: 0px !important;
+            background: transparent !important;
+          }
+          .yt-chips-container::-webkit-scrollbar-track,
+          .yt-chips-container::-webkit-scrollbar-thumb,
+          .yt-chips-container::-webkit-scrollbar-button,
+          .yt-chips-container::-webkit-scrollbar-corner {
+            display: none !important;
+            width: 0px !important;
+            height: 0px !important;
+            background: transparent !important;
+          }
+          .yt-chips-container {
+            -ms-overflow-style: none !important;
+            scrollbar-width: none !important;
+            scrollbar-color: transparent transparent !important;
+          }
+        `}</style>
+
         {/* Left Scroll Chevron with Gradient Fade */}
         {canScrollChipsLeft && (
           <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center pr-8 pl-1 bg-gradient-to-r from-[#0f0f0f] via-[#0f0f0f]/95 to-transparent pointer-events-none">
@@ -866,7 +889,12 @@ export function YoutubeFeedSlot({
         <div
           ref={chipsContainerRef}
           onWheel={handleChipsWheel}
-          className="flex flex-1 items-center gap-1.5 overflow-x-auto px-1 no-scrollbar scroll-smooth"
+          style={{
+            scrollbarWidth: "none",
+            scrollbarColor: "transparent transparent",
+            msOverflowStyle: "none",
+          }}
+          className="yt-chips-container flex flex-1 items-center gap-1.5 overflow-x-auto px-1 no-scrollbar scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar]:w-0 [&::-webkit-scrollbar]:h-0"
         >
           {categoriesList.map((category) => {
             const isActive = activeCategory === category;
