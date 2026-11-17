@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google";
+import { Geist, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -12,26 +12,31 @@ import {
   getFaqSchema,
 } from "@/lib/seo";
 
+const geistSans = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+  display: "swap",
+});
+
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
+  display: "swap",
 });
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+// Pre-compute static JSON-LD once at module scope instead of on every render
+const jsonLdGraph = JSON.stringify([
+  getWebApplicationSchema(),
+  getWebSiteSchema(),
+  getFaqSchema(),
+]).replace(/</g, "\\u003c");
 
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#09090b" },
   ],
+  colorScheme: "dark light",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -41,7 +46,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   title: {
     default: siteConfig.title,
-    template: "%s | TCT MultiStream",
+    template: `%s | ${siteConfig.name}`,
   },
   description: siteConfig.description,
   applicationName: siteConfig.name,
@@ -51,7 +56,7 @@ export const metadata: Metadata = {
   publisher: siteConfig.publisher,
   category: siteConfig.category,
   alternates: {
-    canonical: "./",
+    canonical: "/",
   },
   icons: {
     icon: [
@@ -91,22 +96,17 @@ export const metadata: Metadata = {
     },
   },
   verification: {
-    google:
-      process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION ||
-      "google6ea4c998f6ee953c",
+    // Must be the HTML meta tag content string from Google Search Console
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
   },
   manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
-  const webAppJsonLd = getWebApplicationSchema();
-  const webSiteJsonLd = getWebSiteSchema();
-  const faqJsonLd = getFaqSchema();
-
+}>) {
   return (
     <html
       lang="en"
@@ -114,40 +114,18 @@ export default function RootLayout({
       className={cn(
         "h-full antialiased",
         geistSans.variable,
-        geistMono.variable,
         jetbrainsMono.variable
       )}
     >
-      <head>
+      <body className="min-h-full bg-background font-sans text-foreground antialiased selection:bg-primary/20 selection:text-primary">
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(webAppJsonLd),
-          }}
+          dangerouslySetInnerHTML={{ __html: jsonLdGraph }}
         />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(webSiteJsonLd),
-          }}
-        />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(faqJsonLd),
-          }}
-        />
-      </head>
-      <body className="min-h-full bg-background font-sans text-foreground transition-colors duration-200 antialiased">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange={false}
-        >
-          <TooltipProvider delay={150}>
+        <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange enableSystem>
+          <TooltipProvider delayDuration="{150}">
             {children}
-            <Toaster position="bottom-right" richColors closeButton />
+            <Toaster closeButton position="bottom-right" richColors/>
           </TooltipProvider>
         </ThemeProvider>
       </body>
