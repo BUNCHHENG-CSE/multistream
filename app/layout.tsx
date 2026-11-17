@@ -96,7 +96,6 @@ export const metadata: Metadata = {
     },
   },
   verification: {
-    // Must be the HTML meta tag content string from Google Search Console
     google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
   },
   manifest: "/manifest.webmanifest",
@@ -116,7 +115,6 @@ export default function RootLayout({
         geistSans.variable,
         jetbrainsMono.variable
       )}
-      <meta name="google-site-verification" content="4SF5-0zRhzRQo_rN-rmTXDrSHLBHvSmGTqF59oBbND0" />
     >
       <body className="min-h-full bg-background font-sans text-foreground antialiased selection:bg-primary/20 selection:text-primary">
         <script
