@@ -116,6 +116,7 @@ export default function RootLayout({
         geistSans.variable,
         jetbrainsMono.variable
       )}
+      <meta name="google-site-verification" content="4SF5-0zRhzRQo_rN-rmTXDrSHLBHvSmGTqF59oBbND0" />
     >
       <body className="min-h-full bg-background font-sans text-foreground antialiased selection:bg-primary/20 selection:text-primary">
         <script
