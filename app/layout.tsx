@@ -122,10 +122,15 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: jsonLdGraph }}
         />
-        <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange enableSystem>
-          <TooltipProvider delayDuration="{150}">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          disableTransitionOnChange
+          enableSystem
+        >
+          <TooltipProvider delay={150}>
             {children}
-            <Toaster closeButton position="bottom-right" richColors/>
+            <Toaster closeButton position="bottom-right" richColors />
           </TooltipProvider>
         </ThemeProvider>
       </body>
