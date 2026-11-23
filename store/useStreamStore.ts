@@ -9,6 +9,8 @@ import {
   getStreamPlatform,
   getStreamRawId,
 } from "@/lib/youtube";
+import { getPlayerClock } from "@/lib/player-clock";
+import { formatClock } from "@/store/usePlaybackStore";
 import type { SoundscapeType } from "@/lib/soundscape";
 
 export interface StreamItem {
@@ -24,6 +26,8 @@ export interface StreamBookmark {
   note: string;
   createdAt: number;
   elapsedLabel: string;
+  /** Real position in the video (VODs only) — used for `&t=` deep links */
+  videoTimeSec?: number;
 }
 
 export interface FloatingReaction {
@@ -143,7 +147,8 @@ interface StreamState {
     gridPreset: GridPreset;
     streams: SavedStreamItem[];
   }) => void;
-  clearAllStreams: () => void;
+  /** Clears the grid and returns an `undo` callback that restores it. */
+  clearAllStreams: () => () => void;
   loadStarterStreams: () => void;
 
   // New Actions
@@ -162,6 +167,8 @@ interface StreamState {
   triggerSyncAllLive: () => void;
   setAutoCycle: (enabled: boolean, intervalSec?: AutoCycleInterval) => void;
   cycleNextStream: () => void;
+  /** Rotates the other way: the last stream moves into Slot #01 */
+  cyclePrevStream: () => void;
   setEcoMode: (enabled: boolean) => void;
   setSplitChat: (enabled: boolean) => void;
   setSecondaryChatStream: (videoId: string) => void;
@@ -670,6 +677,21 @@ export const useStreamStore = create<StreamState>()(
       },
 
       clearAllStreams: () => {
+        const s = get();
+        const snapshot = {
+          streams: s.streams,
+          unmutedVideoIds: s.unmutedVideoIds,
+          lastUnmutedVideoIds: s.lastUnmutedVideoIds,
+          focusedVideoId: s.focusedVideoId,
+          manuallyMutedVideoIds: s.manuallyMutedVideoIds,
+          pipVideoId: s.pipVideoId,
+          streamVolumes: s.streamVolumes,
+          streamQualities: s.streamQualities,
+          activeChatVideoId: s.activeChatVideoId,
+          secondaryChatVideoId: s.secondaryChatVideoId,
+          isChatOpen: s.isChatOpen,
+          autoCycleEnabled: s.autoCycleEnabled,
+        };
         set({
           streams: [],
           unmutedVideoIds: [],
@@ -684,6 +706,10 @@ export const useStreamStore = create<StreamState>()(
           isChatOpen: false,
           autoCycleEnabled: false,
         });
+        // Undo restores the grid only if nothing was added in the meantime
+        return () => {
+          if (get().streams.length === 0) set(snapshot);
+        };
       },
 
       loadStarterStreams: () => {
@@ -893,6 +919,14 @@ export const useStreamStore = create<StreamState>()(
           autoCycleEnabled: enabled,
           autoCycleIntervalSec: intervalSec ?? state.autoCycleIntervalSec,
         }));
+      },
+
+      cyclePrevStream: () => {
+        set((state) => {
+          if (state.streams.length <= 1) return state;
+          const last = state.streams[state.streams.length - 1];
+          return { streams: [last, ...state.streams.slice(0, -1)] };
+        });
       },
 
       cycleNextStream: () => {
@@ -1148,13 +1182,22 @@ export const useStreamStore = create<StreamState>()(
             ? `${String(hrs).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
             : `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 
+        // Prefer the real video position for regular videos; live streams keep session time
+        const clock = getPlayerClock(videoId);
+        const videoTimeSec =
+          clock && !clock.isLive && clock.currentTime > 0
+            ? Math.floor(clock.currentTime)
+            : undefined;
+
         const bookmark: StreamBookmark = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           videoId,
           streamLabel: stream.label,
           note: note.trim() || `Key moment on ${stream.label}`,
           createdAt: Date.now(),
-          elapsedLabel,
+          elapsedLabel:
+            videoTimeSec !== undefined ? formatClock(videoTimeSec) : elapsedLabel,
+          videoTimeSec,
         };
 
         set((s) => ({

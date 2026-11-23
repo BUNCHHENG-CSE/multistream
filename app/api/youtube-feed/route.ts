@@ -1,36 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isGoogleAuthEnabled, getServerSession } from "@/auth";
 import { prisma } from "@/db";
+import {
+  YouTubeAuthError,
+  cached,
+  fetchLikedVideos,
+  fetchSubscriptionFeed,
+  localeForRegion,
+  mixHomeFeed,
+  type FeedVideo,
+} from "@/lib/youtube-data-api";
 
-interface VideoResult {
-  videoId: string;
-  title: string;
-  channelName: string;
-  channelAvatar: string;
-  thumbnail: string;
-  views: string;
-  published: string;
-  duration: string;
-  isLive: boolean;
-}
-
-interface YouTubeSearchResponse {
-  videos: VideoResult[];
-  nextToken: string | null;
-  isPersonalized?: boolean;
-  region?: string;
-  authStatus: {
-    isLoggedIn: boolean;
-    hasGoogleAuth: boolean;
-    hasYouTubeScope: boolean;
-    isGoogleConfigured: boolean;
-    user?: {
-      name: string;
-      email: string;
-      image?: string | null;
-    };
-  };
-}
+type VideoResult = FeedVideo;
 
 interface VideoRendererItem {
   videoId?: string;
@@ -413,23 +394,33 @@ async function fetchPublicYouTubeFeed(
   };
 }
 
-// Refresh Google OAuth token if expired
-async function getValidGoogleToken(account: {
+type GoogleAccountRow = {
   id: string;
   accessToken: string | null;
   refreshToken: string | null;
   accessTokenExpiresAt: Date | null;
-}): Promise<string | null> {
+  scope: string | null;
+};
+
+const RECONNECT_NOTICE =
+  "Your YouTube connection expired. Reconnect to sync again.";
+const SCOPE_NOTICE =
+  "YouTube permission wasn't granted. Reconnect and allow YouTube access.";
+
+/**
+ * Returns a usable Google access token, refreshing it when expired (or when `force`).
+ * `revoked` is true when Google says the refresh token is no longer valid.
+ */
+async function getValidGoogleToken(
+  account: GoogleAccountRow,
+  force = false
+): Promise<{ token: string | null; revoked: boolean }> {
   const isExpired =
     account.accessTokenExpiresAt &&
-    account.accessTokenExpiresAt.getTime() - Date.now() < 60000;
+    account.accessTokenExpiresAt.getTime() - Date.now() < 60_000;
 
-  if (account.accessToken && !isExpired) {
-    return account.accessToken;
-  }
-
-  if (!account.refreshToken) {
-    return account.accessToken || null;
+  if (!force && account.accessToken && !isExpired) {
+    return { token: account.accessToken, revoked: false };
   }
 
   const googleClientId =
@@ -437,8 +428,8 @@ async function getValidGoogleToken(account: {
   const googleClientSecret =
     process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET;
 
-  if (!googleClientId || !googleClientSecret) {
-    return account.accessToken || null;
+  if (!account.refreshToken || !googleClientId || !googleClientSecret) {
+    return { token: force ? null : account.accessToken, revoked: force };
   }
 
   try {
@@ -451,407 +442,284 @@ async function getValidGoogleToken(account: {
         refresh_token: account.refreshToken,
         grant_type: "refresh_token",
       }),
+      cache: "no-store",
     });
 
-    if (!refreshRes.ok) return account.accessToken || null;
-    const data = (await refreshRes.json()) as {
+    const data = (await refreshRes.json().catch(() => ({}))) as {
       access_token?: string;
       expires_in?: number;
+      scope?: string;
+      error?: string;
     };
 
-    if (data.access_token) {
-      await prisma.account.update({
-        where: { id: account.id },
-        data: {
-          accessToken: data.access_token,
-          accessTokenExpiresAt: data.expires_in
-            ? new Date(Date.now() + data.expires_in * 1000)
-            : undefined,
-        },
-      });
-      return data.access_token;
+    if (!refreshRes.ok || !data.access_token) {
+      return { token: null, revoked: data.error === "invalid_grant" };
     }
+
+    // Google returns space-separated scopes; Better Auth stores them comma-separated
+    const nextScope = data.scope
+      ? data.scope.split(" ").join(",")
+      : account.scope;
+    await prisma.account.update({
+      where: { id: account.id },
+      data: {
+        accessToken: data.access_token,
+        accessTokenExpiresAt: data.expires_in
+          ? new Date(Date.now() + data.expires_in * 1000)
+          : undefined,
+        scope: nextScope ?? undefined,
+      },
+    });
+    account.accessToken = data.access_token;
+    account.scope = nextScope;
+    return { token: data.access_token, revoked: false };
   } catch (err) {
     console.error("Failed to refresh Google token:", err);
+    return { token: force ? null : account.accessToken, revoked: false };
   }
-
-  return account.accessToken || null;
 }
 
-// Fetch personalized YouTube feed for authenticated user (Subscriptions + Liked Videos)
-async function fetchUserPersonalizedFeed(
-  googleToken: string
-): Promise<VideoResult[]> {
-  const liveVideos: VideoResult[] = [];
-  const uploadVideos: VideoResult[] = [];
-  const likedVideos: VideoResult[] = [];
+type FeedKind = "home" | "subscriptions" | "liked" | "public";
+const LIKED_TOKEN_PREFIX = "liked:";
 
-  try {
-    // 1. Fetch user's subscriptions (up to 50 channels)
-    const subRes = await fetch(
-      "https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults=50",
-      {
-        headers: {
-          Authorization: `Bearer ${googleToken}`,
-        },
-      }
-    );
-
-    if (subRes.ok) {
-      const subData = (await subRes.json()) as {
-        items?: Array<{
-          snippet?: {
-            title?: string;
-            resourceId?: { channelId?: string };
-            thumbnails?: { default?: { url?: string } };
-          };
-        }>;
-      };
-
-      const subscribedChannels = subData.items || [];
-      const targetChannels = subscribedChannels.slice(0, 15);
-
-      // Fetch latest videos from top subscribed channels in parallel
-      const channelVideoPromises = targetChannels.map(async (channel) => {
-        const channelId = channel.snippet?.resourceId?.channelId;
-        const channelName = channel.snippet?.title || "Subscribed Channel";
-        const channelAvatar = channel.snippet?.thumbnails?.default?.url || "";
-        if (!channelId) return [];
-
-        const uploadsPlaylistId = channelId.startsWith("UC")
-          ? "UU" + channelId.slice(2)
-          : channelId;
-
-        try {
-          const plRes = await fetch(
-            `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${encodeURIComponent(
-              uploadsPlaylistId
-            )}&maxResults=3`,
-            {
-              headers: { Authorization: `Bearer ${googleToken}` },
-            }
-          );
-
-          if (!plRes.ok) return [];
-          const plData = (await plRes.json()) as {
-            items?: Array<{
-              snippet?: {
-                title?: string;
-                publishedAt?: string;
-                resourceId?: { videoId?: string };
-                thumbnails?: {
-                  high?: { url?: string };
-                  medium?: { url?: string };
-                };
-              };
-            }>;
-          };
-
-          return (plData.items || [])
-            .map((item) => {
-              const videoId = item.snippet?.resourceId?.videoId;
-              if (!videoId) return null;
-              const thumb =
-                item.snippet?.thumbnails?.high?.url ||
-                item.snippet?.thumbnails?.medium?.url ||
-                `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
-              const publishedDate = item.snippet?.publishedAt
-                ? new Date(item.snippet.publishedAt).toLocaleDateString()
-                : "";
-
-              return {
-                videoId,
-                title: item.snippet?.title || "Video",
-                channelName,
-                channelAvatar,
-                thumbnail: thumb,
-                views: "From subscriptions",
-                published: publishedDate,
-                duration: "",
-                isLive: false,
-              } as VideoResult;
-            })
-            .filter((v): v is VideoResult => Boolean(v));
-        } catch {
-          return [];
-        }
-      });
-
-      const channelResults = await Promise.all(channelVideoPromises);
-      const allUploads = channelResults.flat();
-      const videoIds = allUploads.map((v) => v.videoId).slice(0, 50);
-
-      if (videoIds.length > 0) {
-        try {
-          const vDetailsRes = await fetch(
-            `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails,statistics&id=${videoIds.join(
-              ","
-            )}`,
-            {
-              headers: { Authorization: `Bearer ${googleToken}` },
-            }
-          );
-
-          if (vDetailsRes.ok) {
-            const vData = (await vDetailsRes.json()) as {
-              items?: Array<{
-                id?: string;
-                snippet?: {
-                  liveBroadcastContent?: string;
-                };
-                liveStreamingDetails?: {
-                  concurrentViewers?: string;
-                };
-                statistics?: {
-                  viewCount?: string;
-                };
-              }>;
-            };
-
-            const detailsMap = new Map(
-              (vData.items || []).map((it) => [it.id, it])
-            );
-
-            for (const item of allUploads) {
-              const detail = detailsMap.get(item.videoId);
-              if (detail) {
-                const isCurrentlyLive =
-                  detail.snippet?.liveBroadcastContent === "live";
-                if (isCurrentlyLive) {
-                  item.isLive = true;
-                  const viewers =
-                    detail.liveStreamingDetails?.concurrentViewers;
-                  item.views = viewers
-                    ? `${Number(viewers).toLocaleString()} watching`
-                    : "🔴 LIVE";
-                  liveVideos.push(item);
-                } else {
-                  const rawViews = Number(detail.statistics?.viewCount || 0);
-                  if (rawViews > 1000) {
-                    item.views =
-                      rawViews > 1_000_000
-                        ? `${(rawViews / 1_000_000).toFixed(1)}M views`
-                        : `${Math.round(rawViews / 1000)}K views`;
-                  }
-                  uploadVideos.push(item);
-                }
-              } else {
-                uploadVideos.push(item);
-              }
-            }
-          } else {
-            uploadVideos.push(...allUploads);
-          }
-        } catch {
-          uploadVideos.push(...allUploads);
-        }
-      }
-    }
-
-    // 2. Fetch user's liked videos as part of recommended feed
-    try {
-      const likedRes = await fetch(
-        "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&myRating=like&maxResults=25",
-        {
-          headers: { Authorization: `Bearer ${googleToken}` },
-        }
-      );
-
-      if (likedRes.ok) {
-        const likedData = (await likedRes.json()) as {
-          items?: Array<{
-            id?: string;
-            snippet?: {
-              title?: string;
-              channelTitle?: string;
-              publishedAt?: string;
-              thumbnails?: {
-                high?: { url?: string };
-                medium?: { url?: string };
-              };
-            };
-            statistics?: {
-              viewCount?: string;
-            };
-          }>;
-        };
-
-        const likedList = (likedData.items || []).map((item) => {
-          const videoId = item.id;
-          if (!videoId) return null;
-          const thumb =
-            item.snippet?.thumbnails?.high?.url ||
-            item.snippet?.thumbnails?.medium?.url ||
-            `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
-          const rawViews = Number(item.statistics?.viewCount || 0);
-          const viewsLabel =
-            rawViews > 1_000_000
-              ? `${(rawViews / 1_000_000).toFixed(1)}M views`
-              : rawViews > 1_000
-                ? `${Math.round(rawViews / 1000)}K views`
-                : rawViews > 0
-                  ? `${rawViews} views`
-                  : "Liked video";
-
-          return {
-            videoId,
-            title: item.snippet?.title || "Liked Video",
-            channelName: item.snippet?.channelTitle || "YouTube",
-            channelAvatar: "",
-            thumbnail: thumb,
-            views: `Liked • ${viewsLabel}`,
-            published: item.snippet?.publishedAt
-              ? new Date(item.snippet.publishedAt).toLocaleDateString()
-              : "",
-            duration: "",
-            isLive: false,
-          } as VideoResult;
-        });
-
-        likedVideos.push(
-          ...likedList.filter((v): v is VideoResult => Boolean(v))
-        );
-      }
-    } catch (err) {
-      console.warn("Could not fetch liked videos:", err);
-    }
-  } catch (err) {
-    console.error("Personalized YouTube feed error:", err);
+function resolveFeedKind(
+  searchParams: URLSearchParams,
+  query: string,
+  continuation: string,
+  hasYouTubeScope: boolean
+): FeedKind {
+  if (continuation) {
+    return continuation.startsWith(LIKED_TOKEN_PREFIX) ? "liked" : "public";
   }
-
-  return [...liveVideos, ...uploadVideos, ...likedVideos];
+  const feed = searchParams.get("feed");
+  if (feed === "home" || feed === "subscriptions" || feed === "liked") {
+    return feed;
+  }
+  // Legacy params kept for older clients
+  const q = query.toLowerCase();
+  if (q === "subscriptions") return "subscriptions";
+  if (
+    searchParams.get("personalized") === "true" ||
+    q === "for you" ||
+    q === "my youtube"
+  ) {
+    return "home";
+  }
+  if (searchParams.get("initial") === "true" && hasYouTubeScope && q === "all") {
+    return "home";
+  }
+  return "public";
 }
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const query = searchParams.get("q")?.trim() || "All";
   const continuation = searchParams.get("continuation")?.trim() || "";
-  const forcePersonalized = searchParams.get("personalized") === "true";
-  const isInitial = searchParams.get("initial") === "true";
   const region = searchParams.get("region")?.trim() || "KH";
+  const fresh = searchParams.get("fresh") === "1";
+  const locale = localeForRegion(region);
 
-  // Check auth session
   let session = null;
   try {
     session = await getServerSession();
   } catch {
-    // Session check failure
+    // Session check failure → treat as guest
   }
 
+  let googleAccount: GoogleAccountRow | null = null;
   let googleToken: string | null = null;
-  let googleAccount = null;
+  let needsReconnect = false;
 
   if (session?.user?.id) {
     try {
       googleAccount = await prisma.account.findFirst({
-        where: {
-          userId: session.user.id,
-          providerId: "google",
-        },
-        orderBy: {
-          updatedAt: "desc",
+        where: { userId: session.user.id, providerId: "google" },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          id: true,
+          accessToken: true,
+          refreshToken: true,
+          accessTokenExpiresAt: true,
+          scope: true,
         },
       });
-
       if (googleAccount) {
-        googleToken = await getValidGoogleToken(googleAccount);
+        const result = await getValidGoogleToken(googleAccount);
+        googleToken = result.token;
+        needsReconnect = result.revoked || !result.token;
       }
     } catch (err) {
       console.error("Database account lookup error:", err);
     }
   }
 
-  // Any authenticated Google account has YouTube scopes requested upon sign-in
-  const hasYouTubeScope = Boolean(
+  // Google lets users untick individual permissions, so check the granted scope.
+  // Rows without a stored scope (older sign-ins) are verified by the API call itself.
+  let hasYouTubeScope = Boolean(
     googleAccount &&
-      (googleAccount.scope?.includes("youtube") ||
-        Boolean(googleToken) ||
-        Boolean(googleAccount.accessToken) ||
-        Boolean(googleAccount.refreshToken))
+      !needsReconnect &&
+      (googleAccount.scope
+        ? googleAccount.scope.includes("youtube")
+        : Boolean(googleToken))
   );
 
-  const authStatus = {
-    isLoggedIn: Boolean(session?.user),
-    hasGoogleAuth: Boolean(googleAccount),
-    hasYouTubeScope,
-    isGoogleConfigured: isGoogleAuthEnabled,
-    user: session?.user
-      ? {
-          name: session.user.name,
-          email: session.user.email,
-          image: session.user.image,
-        }
-      : undefined,
-  };
-
-  // Determine if we should show personalized user feed:
-  // - User has logged in with Google AND
-  // - Account has granted YouTube scopes AND
-  // - User specifically asked for "For You" / "Subscriptions" OR initial load with YouTube connected
-  const isPersonalizedQuery =
-    forcePersonalized ||
-    query.toLowerCase() === "for you" ||
-    query.toLowerCase() === "subscriptions" ||
-    query.toLowerCase() === "my youtube" ||
-    (isInitial && hasYouTubeScope);
-
-  const shouldServePersonalized =
-    Boolean(googleToken) &&
-    hasYouTubeScope &&
-    !continuation &&
-    isPersonalizedQuery;
-
-  if (shouldServePersonalized && googleToken) {
-    try {
-      // Fetch user's personalized videos (subscriptions & liked) in parallel with public trending/recommended feed
-      const [personalVideos, publicFeed] = await Promise.all([
-        fetchUserPersonalizedFeed(googleToken).catch((err) => {
-          console.error("Personalized feed fetch error:", err);
-          return [] as VideoResult[];
-        }),
-        fetchPublicYouTubeFeed("All", "", region).catch((err) => {
-          console.error("Public feed fallback error:", err);
-          return { videos: [] as VideoResult[], nextToken: null };
-        }),
-      ]);
-
-      // Deduplicate: avoid repeating any video that already appears in personalVideos
-      const personalIds = new Set(personalVideos.map((v) => v.videoId));
-      const filteredPublic = publicFeed.videos.filter(
-        (v) => !personalIds.has(v.videoId)
-      );
-
-      // Merge: personal videos first (liked + subscription uploads), then endless recommendations
-      const combinedVideos = [...personalVideos, ...filteredPublic];
-
-      if (combinedVideos.length > 0) {
-        return NextResponse.json({
-          videos: combinedVideos,
-          nextToken: publicFeed.nextToken,
-          isPersonalized: true,
-          region,
-          authStatus,
-        } as YouTubeSearchResponse);
-      }
-    } catch (err) {
-      console.error("Failed to serve personalized feed, falling back:", err);
-    }
-  }
-
-  // Fallback to real YouTube search/trending feed (works for unauthenticated, random, or category searches)
-  const { videos, nextToken } = await fetchPublicYouTubeFeed(
+  const feedKind = resolveFeedKind(
+    searchParams,
     query,
     continuation,
+    hasYouTubeScope
+  );
+
+  let notice: string | undefined;
+
+  const handleAuthFailure = (err: unknown) => {
+    if (err instanceof YouTubeAuthError) {
+      if (err.kind === "quota") {
+        notice = "YouTube daily API quota reached — showing public feed.";
+        return;
+      }
+      hasYouTubeScope = false;
+      if (err.kind === "scope") {
+        notice = SCOPE_NOTICE;
+      } else {
+        needsReconnect = true;
+        notice = RECONNECT_NOTICE;
+      }
+      return;
+    }
+    console.error("YouTube account feed error:", err);
+    notice = "Couldn't reach your YouTube account — showing public feed.";
+  };
+
+  /** Runs a Data API call, retrying once with a force-refreshed token on 401. */
+  const withToken = async <T,>(
+    fn: (token: string) => Promise<T>
+  ): Promise<T | null> => {
+    if (!googleAccount || !googleToken) return null;
+    try {
+      return await fn(googleToken);
+    } catch (err) {
+      if (err instanceof YouTubeAuthError && err.kind === "unauthorized") {
+        const retry = await getValidGoogleToken(googleAccount, true);
+        if (!retry.token) {
+          handleAuthFailure(err);
+          return null;
+        }
+        googleToken = retry.token;
+        try {
+          return await fn(retry.token);
+        } catch (retryErr) {
+          handleAuthFailure(retryErr);
+          return null;
+        }
+      }
+      handleAuthFailure(err);
+      return null;
+    }
+  };
+
+  const respond = (body: {
+    videos: VideoResult[];
+    nextToken: string | null;
+    feed: FeedKind;
+    isPersonalized: boolean;
+  }) =>
+    NextResponse.json(
+      {
+        ...body,
+        region,
+        notice,
+        authStatus: {
+          isLoggedIn: Boolean(session?.user),
+          hasGoogleAuth: Boolean(googleAccount),
+          hasYouTubeScope,
+          needsReconnect,
+          isGoogleConfigured: isGoogleAuthEnabled,
+          user: session?.user
+            ? {
+                name: session.user.name,
+                email: session.user.email,
+                image: session.user.image,
+              }
+            : undefined,
+        },
+      },
+      { headers: { "Cache-Control": "private, no-store" } }
+    );
+
+  const userId = session?.user?.id ?? "";
+
+  if (feedKind !== "public" && hasYouTubeScope && googleToken) {
+    if (feedKind === "liked") {
+      const pageToken = continuation.startsWith(LIKED_TOKEN_PREFIX)
+        ? continuation.slice(LIKED_TOKEN_PREFIX.length)
+        : undefined;
+      const liked = await withToken((t) =>
+        cached(`${userId}:liked:${locale}:${pageToken ?? ""}`, fresh, () =>
+          fetchLikedVideos(t, locale, pageToken)
+        )
+      );
+      if (liked) {
+        return respond({
+          videos: liked.videos,
+          nextToken: liked.nextPageToken
+            ? `${LIKED_TOKEN_PREFIX}${liked.nextPageToken}`
+            : null,
+          feed: "liked",
+          isPersonalized: true,
+        });
+      }
+    } else {
+      const [subs, publicFeed] = await Promise.all([
+        withToken((t) =>
+          cached(`${userId}:subs:${locale}`, fresh, () =>
+            fetchSubscriptionFeed(t, locale)
+          )
+        ),
+        feedKind === "home"
+          ? fetchPublicYouTubeFeed("All", "", region).catch(() => ({
+              videos: [] as VideoResult[],
+              nextToken: null,
+            }))
+          : Promise.resolve(null),
+      ]);
+
+      if (subs && feedKind === "subscriptions") {
+        return respond({
+          videos: subs,
+          nextToken: null,
+          feed: "subscriptions",
+          isPersonalized: true,
+        });
+      }
+      if (subs && publicFeed) {
+        return respond({
+          videos: mixHomeFeed(subs, publicFeed.videos),
+          nextToken: publicFeed.nextToken,
+          feed: "home",
+          isPersonalized: true,
+        });
+      }
+      if (publicFeed && publicFeed.videos.length > 0) {
+        return respond({
+          videos: publicFeed.videos,
+          nextToken: publicFeed.nextToken,
+          feed: "public",
+          isPersonalized: false,
+        });
+      }
+    }
+  } else if (feedKind !== "public" && googleAccount) {
+    notice = needsReconnect ? RECONNECT_NOTICE : SCOPE_NOTICE;
+  }
+
+  // Public YouTube feed (guests, categories, search, or personal-feed fallback)
+  const { videos, nextToken } = await fetchPublicYouTubeFeed(
+    feedKind === "public" ? query : "All",
+    feedKind === "liked" ? "" : continuation,
     region
   );
 
-  return NextResponse.json({
-    videos,
-    nextToken,
-    isPersonalized: false,
-    region,
-    authStatus,
-  } as YouTubeSearchResponse);
+  return respond({ videos, nextToken, feed: "public", isPersonalized: false });
 }
+

@@ -21,7 +21,15 @@ import {
   CheckCircle2,
   AlertTriangle,
   Globe,
+  Rss,
+  ThumbsUp,
+  ListPlus,
+  Bell,
+  BellRing,
+  History,
+  Clock,
 } from "lucide-react";
+import { usePlaybackStore, formatClock } from "@/store/usePlaybackStore";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { useStreamStore } from "@/store/useStreamStore";
@@ -46,12 +54,15 @@ interface VideoResult {
   published: string;
   duration: string;
   isLive: boolean;
+  isUpcoming?: boolean;
+  scheduledAt?: number;
 }
 
 interface AuthStatus {
   isLoggedIn: boolean;
   hasGoogleAuth: boolean;
   hasYouTubeScope: boolean;
+  needsReconnect?: boolean;
   isGoogleConfigured: boolean;
   user?: {
     name: string;
@@ -64,8 +75,39 @@ interface YoutubeFeedSlotProps {
   slotIndex: number;
   className?: string;
   onSelectVideo?: (videoId: string, title: string) => void;
+  /** When set (browsing from a tile), cards show "+ Queue" to add to that tile's Up next */
+  onQueueVideo?: (videoId: string, title: string) => void;
   onClose?: () => void;
 }
+
+type FeedKind = "home" | "subscriptions" | "liked" | "public";
+
+interface FeedResponse {
+  videos: VideoResult[];
+  nextToken: string | null;
+  feed?: FeedKind;
+  isPersonalized?: boolean;
+  notice?: string;
+  authStatus?: AuthStatus;
+}
+
+const YOUTUBE_READONLY_SCOPE =
+  "https://www.googleapis.com/auth/youtube.readonly";
+
+const FOR_YOU = "★ For You";
+const SUBSCRIPTIONS = "Subscriptions";
+const LIKED = "Liked videos";
+const CONTINUE = "Continue watching";
+const HISTORY = "History";
+/** Chips built from this browser's own playback data (no server call, no sign-in) */
+const LOCAL_FEEDS = new Set([CONTINUE, HISTORY]);
+
+/** Account-synced chips (shown once YouTube is connected) → server feed kind. */
+const PERSONAL_FEEDS: Record<string, Exclude<FeedKind, "public">> = {
+  [FOR_YOU]: "home",
+  [SUBSCRIPTIONS]: "subscriptions",
+  [LIKED]: "liked",
+};
 
 const DEFAULT_CATEGORIES = [
   "All",
@@ -81,6 +123,19 @@ const DEFAULT_CATEGORIES = [
   "News",
   "Lo-Fi",
 ];
+
+function formatWatchedAgo(ts: number): string {
+  try {
+    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+    const mins = Math.round((ts - Date.now()) / 60000);
+    if (Math.abs(mins) < 60) return rtf.format(mins, "minute");
+    const hrs = Math.round(mins / 60);
+    if (Math.abs(hrs) < 24) return rtf.format(hrs, "hour");
+    return rtf.format(Math.round(hrs / 24), "day");
+  } catch {
+    return new Date(ts).toLocaleDateString();
+  }
+}
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -109,6 +164,7 @@ export function YoutubeFeedSlot({
   slotIndex,
   className,
   onSelectVideo,
+  onQueueVideo,
   onClose,
 }: YoutubeFeedSlotProps) {
   const addStream = useStreamStore((s) => s.addStream);
@@ -123,6 +179,7 @@ export function YoutubeFeedSlot({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [currentQuery, setCurrentQuery] = useState("All");
   const [isPersonalized, setIsPersonalized] = useState(false);
+  const [feedKind, setFeedKind] = useState<FeedKind>("public");
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [dismissBanner, setDismissBanner] = useState(false);
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
@@ -153,6 +210,7 @@ export function YoutubeFeedSlot({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const lastNoticeRef = useRef<string | null>(null);
 
   const checkChipsScroll = useCallback(() => {
     const el = chipsContainerRef.current;
@@ -204,75 +262,129 @@ export function YoutubeFeedSlot({
   }, [checkChipsScroll, authStatus.hasYouTubeScope]);
 
   const activeIds = new Set(streams.map((s) => s.videoId));
+  const progress = usePlaybackStore((s) => s.progress);
+  const history = usePlaybackStore((s) => s.history);
+  const reminders = usePlaybackStore((s) => s.reminders);
 
-  // Fetch videos from route
+  /** Local "Continue watching" / "History" lists as feed cards */
+  const buildLocalFeed = (category: string): VideoResult[] => {
+    const { getResumeTime } = usePlaybackStore.getState();
+    const items =
+      category === CONTINUE
+        ? history.filter((h) => getResumeTime(h.videoId) !== null)
+        : history;
+    return items.map((h) => {
+      const p = progress[h.videoId];
+      const left = p && p.d > p.t ? p.d - p.t : 0;
+      return {
+        videoId: h.videoId,
+        title: h.title,
+        channelName: "",
+        channelAvatar: "",
+        thumbnail: `https://i.ytimg.com/vi/${h.videoId}/hqdefault.jpg`,
+        views:
+          category === CONTINUE && left
+            ? `${formatClock(left)} left`
+            : `Watched ${formatWatchedAgo(h.watchedAt)}`,
+        published: "",
+        duration: p?.d ? formatClock(p.d) : "",
+        isLive: false,
+      };
+    });
+  };
+
+  const handleToggleReminder = (video: VideoResult) => {
+    if (!video.scheduledAt) return;
+    const isSet = usePlaybackStore.getState().toggleReminder({
+      videoId: video.videoId,
+      title: video.title,
+      channelName: video.channelName,
+      scheduledAt: video.scheduledAt,
+    });
+    if (
+      isSet &&
+      typeof Notification !== "undefined" &&
+      Notification.permission === "default"
+    ) {
+      void Notification.requestPermission();
+    }
+    if (isSet) {
+      toast.success(`Reminder set for "${video.title}"`, {
+        description: `Alert at ${new Date(video.scheduledAt).toLocaleString(
+          undefined,
+          { dateStyle: "medium", timeStyle: "short" }
+        )} while the app is open.`,
+      });
+    } else {
+      toast.info("Reminder removed");
+    }
+  };
+
+  // Apply a feed response (shared by initial load, category switches & refresh)
+  const applyFeedResponse = useCallback((data: FeedResponse) => {
+    setVideos(data.videos || []);
+    setNextToken(data.nextToken || null);
+    setIsPersonalized(Boolean(data.isPersonalized));
+    setFeedKind(data.feed ?? "public");
+    if (data.authStatus) {
+      setAuthStatus(data.authStatus);
+    }
+    // Surface sync problems once (expired token, missing permission, quota)
+    if (data.notice && data.notice !== lastNoticeRef.current) {
+      toast.warning(data.notice);
+    }
+    lastNoticeRef.current = data.notice ?? null;
+  }, []);
+
+  /**
+   * Fetch a feed. `category` is a chip label (incl. synced feeds like "Subscriptions")
+   * or a free-text search query.
+   */
   const fetchVideos = useCallback(
     async (
-      query: string,
-      isInitial = true,
-      forcePersonal?: boolean,
-      overrideRegion?: string
+      category: string,
+      options: { region?: string; fresh?: boolean } = {}
     ) => {
       abortControllerRef.current?.abort();
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      if (isInitial) {
-        setIsLoading(true);
-        setVideos([]);
-        setNextToken(null);
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTop = 0;
-        }
-      } else {
-        setIsLoadingMore(true);
+      setIsLoading(true);
+      setVideos([]);
+      setNextToken(null);
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
       }
 
-      const activeReg = overrideRegion || selectedRegion;
+      const params = new URLSearchParams({
+        region: options.region || selectedRegion,
+      });
+      const personalFeed = PERSONAL_FEEDS[category];
+      if (personalFeed) {
+        params.set("feed", personalFeed);
+      } else {
+        params.set("q", category || "All");
+      }
+      if (options.fresh) params.set("fresh", "1");
 
       try {
-        const queryParam = query === "All" ? "All" : query;
-        const personalizedParam =
-          forcePersonal || query.toLowerCase() === "for you"
-            ? "&personalized=true"
-            : "";
-
-        const res = await fetch(
-          `/api/youtube-feed?q=${encodeURIComponent(
-            queryParam
-          )}${personalizedParam}&region=${encodeURIComponent(activeReg)}`,
-          { signal: controller.signal }
-        );
-
+        const res = await fetch(`/api/youtube-feed?${params.toString()}`, {
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error("Search failed");
-        const data = (await res.json()) as {
-          videos: VideoResult[];
-          nextToken: string | null;
-          isPersonalized?: boolean;
-          authStatus?: AuthStatus;
-        };
-
-        setVideos(data.videos || []);
-        setNextToken(data.nextToken || null);
-        setIsPersonalized(Boolean(data.isPersonalized));
-
-        if (data.authStatus) {
-          setAuthStatus(data.authStatus);
-        }
-
-        if (isInitial && scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTop = 0;
-        }
+        applyFeedResponse((await res.json()) as FeedResponse);
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           console.error("Failed to load YouTube feed:", err);
+          toast.error("Couldn't load YouTube feed. Try refreshing.");
         }
       } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
+        if (abortControllerRef.current === controller) {
+          setIsLoading(false);
+        }
       }
     },
-    [selectedRegion]
+    [selectedRegion, applyFeedResponse]
   );
 
   // Pagination for infinite scrolling
@@ -288,10 +400,7 @@ export function YoutubeFeedSlot({
       );
       if (!res.ok) throw new Error("Continuation failed");
 
-      const data = (await res.json()) as {
-        videos: VideoResult[];
-        nextToken: string | null;
-      };
+      const data = (await res.json()) as FeedResponse;
 
       if (data.videos && data.videos.length > 0) {
         setVideos((prev) => {
@@ -305,12 +414,13 @@ export function YoutubeFeedSlot({
       setNextToken(data.nextToken || null);
     } catch (err) {
       console.error("Failed to paginate YouTube feed:", err);
+      setNextToken(null);
     } finally {
       setIsLoadingMore(false);
     }
   }, [nextToken, isLoadingMore, isLoading, selectedRegion]);
 
-  // Initial load
+  // Initial load — server serves the synced Home feed when YouTube is connected
   useEffect(() => {
     let ignore = false;
     const controller = new AbortController();
@@ -324,24 +434,14 @@ export function YoutubeFeedSlot({
     )
       .then((res) => {
         if (!res.ok) throw new Error("Search failed");
-        return res.json() as Promise<{
-          videos: VideoResult[];
-          nextToken: string | null;
-          isPersonalized?: boolean;
-          authStatus?: AuthStatus;
-        }>;
+        return res.json() as Promise<FeedResponse>;
       })
       .then((data) => {
         if (ignore) return;
-        setVideos(data.videos || []);
-        setNextToken(data.nextToken || null);
-        setIsPersonalized(Boolean(data.isPersonalized));
-        if (data.authStatus) {
-          setAuthStatus(data.authStatus);
-          if (data.authStatus.hasYouTubeScope && data.isPersonalized) {
-            setActiveCategory("★ For You");
-            setCurrentQuery("For You");
-          }
+        applyFeedResponse(data);
+        if (data.feed === "home") {
+          setActiveCategory(FOR_YOU);
+          setCurrentQuery(FOR_YOU);
         }
       })
       .catch((err) => {
@@ -385,7 +485,7 @@ export function YoutubeFeedSlot({
     return () => observer.disconnect();
   }, [nextToken, isLoadingMore, isLoading, loadMoreVideos]);
 
-  // Google OAuth Sign-in Handler (Prompt user with YouTube permissions)
+  // Google OAuth: request youtube.readonly explicitly so re-linking restores a missing permission
   const handleGoogleSignIn = async () => {
     if (!authStatus.isGoogleConfigured) {
       toast.info("Google sign-in is not enabled on this deployment.");
@@ -393,53 +493,37 @@ export function YoutubeFeedSlot({
     }
 
     setIsSigningIn(true);
+    const callbackURL = window.location.href;
     try {
       if (authStatus.isLoggedIn) {
-        // When logged in, linkSocial asks for and merges the youtube.readonly scope
+        // Links (or re-links) Google to the current user and merges the YouTube scope
         const res = await authClient.linkSocial({
           provider: "google",
-          callbackURL: window.location.href,
+          callbackURL,
+          scopes: [YOUTUBE_READONLY_SCOPE],
         });
-
         if (res?.data?.url) {
           window.location.href = res.data.url;
           return;
         }
-
-        if (res?.error) {
-          // If linkSocial encounters an issue, fallback to signIn.social
-          const fallbackRes = await authClient.signIn.social({
-            provider: "google",
-            callbackURL: window.location.href,
-          });
-          if (fallbackRes?.data?.url) {
-            window.location.href = fallbackRes.data.url;
-            return;
-          }
-          toast.error(
-            fallbackRes?.error?.message ||
-              res.error.message ||
-              "Failed to start Google authentication"
-          );
-          setIsSigningIn(false);
-          return;
-        }
-      } else {
-        const res = await authClient.signIn.social({
-          provider: "google",
-          callbackURL: window.location.href,
-        });
-
-        if (res?.data?.url) {
-          window.location.href = res.data.url;
-          return;
-        }
-
-        if (res?.error) {
-          toast.error(res.error.message || "Failed to start Google authentication");
-          setIsSigningIn(false);
-        }
+        toast.error(
+          res?.error?.message || "Failed to start Google authentication"
+        );
+        setIsSigningIn(false);
+        return;
       }
+
+      const res = await authClient.signIn.social({
+        provider: "google",
+        callbackURL,
+        scopes: [YOUTUBE_READONLY_SCOPE],
+      });
+      if (res?.data?.url) {
+        window.location.href = res.data.url;
+        return;
+      }
+      toast.error(res?.error?.message || "Failed to start Google authentication");
+      setIsSigningIn(false);
     } catch (err) {
       console.error("Google sign-in error:", err);
       toast.error("Could not start Google sign-in. Please try again.");
@@ -458,6 +542,8 @@ export function YoutubeFeedSlot({
         isGoogleConfigured: authStatus.isGoogleConfigured,
       });
       setActiveCategory("All");
+      setCurrentQuery("All");
+      setSearchInput("");
       fetchVideos("All");
     } catch (err) {
       console.error("Sign out error:", err);
@@ -477,40 +563,38 @@ export function YoutubeFeedSlot({
         ? "Switched to 🇰🇭 Cambodia (Khmer) server"
         : "Switched to 🌐 Global server"
     );
-    fetchVideos(
-      currentQuery,
-      true,
-      activeCategory === "★ For You",
-      nextRegion
-    );
+    fetchVideos(currentQuery, { region: nextRegion });
   };
 
   const handleSelectCategory = (category: string) => {
     setActiveCategory(category);
     setCurrentQuery(category);
     setSearchInput(
-      category === "All" || category === "★ For You" ? "" : category
+      category === "All" || PERSONAL_FEEDS[category] || LOCAL_FEEDS.has(category)
+        ? ""
+        : category
     );
     setIsSearchOpen(false);
-
-    if (category === "★ For You") {
-      fetchVideos("For You", true, true);
-    } else {
-      fetchVideos(category, true, false);
+    if (LOCAL_FEEDS.has(category)) {
+      abortControllerRef.current?.abort();
+      setIsLoading(false);
+      setNextToken(null);
+      setIsPersonalized(false);
+      setVideos(buildLocalFeed(category));
+      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+      return;
     }
+    fetchVideos(category);
   };
+
+  const defaultCategory = authStatus.hasYouTubeScope ? FOR_YOU : "All";
 
   const handleClearSearch = () => {
     setSearchInput("");
     setIsSearchOpen(false);
-    const defaultCat = authStatus.hasYouTubeScope ? "★ For You" : "All";
-    setActiveCategory(defaultCat);
-    setCurrentQuery(defaultCat);
-    fetchVideos(
-      defaultCat === "★ For You" ? "For You" : "All",
-      true,
-      defaultCat === "★ For You"
-    );
+    setActiveCategory(defaultCategory);
+    setCurrentQuery(defaultCategory);
+    fetchVideos(defaultCategory);
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -522,20 +606,22 @@ export function YoutubeFeedSlot({
     }
     setActiveCategory("");
     setCurrentQuery(trimmed);
-    fetchVideos(trimmed, true, false);
+    fetchVideos(trimmed);
     setIsSearchOpen(false);
   };
 
+  // Refresh bypasses the server's 5-minute account cache, like reloading youtube.com
   const handleRefresh = () => {
-    if (!searchInput.trim() && !activeCategory) {
-      handleClearSearch();
+    const target = currentQuery || defaultCategory;
+    if (LOCAL_FEEDS.has(target)) {
+      handleSelectCategory(target);
       return;
     }
-    fetchVideos(
-      currentQuery,
-      true,
-      activeCategory === "★ For You"
-    );
+    if (!currentQuery) {
+      setActiveCategory(defaultCategory);
+      setCurrentQuery(defaultCategory);
+    }
+    fetchVideos(target, { fresh: true });
   };
 
   const handleVideoClick = (video: VideoResult) => {
@@ -558,19 +644,21 @@ export function YoutubeFeedSlot({
   };
 
   // Categories list changes based on Google login status
+  const localChips = history.length > 0 ? [CONTINUE, HISTORY] : [];
   const categoriesList = authStatus.hasYouTubeScope
-    ? ["★ For You", ...DEFAULT_CATEGORIES]
-    : DEFAULT_CATEGORIES;
+    ? ["All", FOR_YOU, SUBSCRIPTIONS, LIKED, ...localChips, ...DEFAULT_CATEGORIES.slice(1)]
+    : ["All", ...localChips, ...DEFAULT_CATEGORIES.slice(1)];
+  const isLocalFeed = LOCAL_FEEDS.has(activeCategory);
 
   return (
     <div
       className={cn(
-        "@container group/yt-feed relative flex h-full w-full flex-col overflow-hidden bg-[#0f0f0f] text-zinc-100",
+        "@container group/yt-feed relative flex h-full w-full flex-col overflow-hidden bg-white dark:bg-[#0f0f0f] text-zinc-900 dark:text-zinc-100",
         className
       )}
     >
       {/* ── YouTube App Bar ── */}
-      <div className="flex shrink-0 items-center justify-between gap-1.5 @xs:gap-2 border-b border-zinc-800/80 bg-[#0f0f0f]/95 px-2.5 @xs:px-3 py-2 backdrop-blur-md">
+      <div className="flex shrink-0 items-center justify-between gap-1.5 @xs:gap-2 border-b border-zinc-200 dark:border-zinc-800/80 bg-white/95 dark:bg-[#0f0f0f]/95 px-2.5 @xs:px-3 py-2 backdrop-blur-md">
         {isSearchOpen ? (
           /* Expanded Full-Width Search Bar (Mobile / Compact Mode) */
           <div className="flex flex-1 items-center gap-1.5 py-0.5">
@@ -578,7 +666,7 @@ export function YoutubeFeedSlot({
               type="button"
               onClick={() => setIsSearchOpen(false)}
               title="Cancel search"
-              className="flex size-7 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-800 hover:text-white transition cursor-pointer shrink-0"
+              className="flex size-7 items-center justify-center rounded-full text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-950 dark:hover:text-white transition cursor-pointer shrink-0"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -594,14 +682,14 @@ export function YoutubeFeedSlot({
                   onChange={(e) => setSearchInput(e.target.value)}
                   placeholder="Search YouTube..."
                   autoFocus
-                  className="h-8 w-full rounded-l-full border border-zinc-700/80 bg-zinc-900/95 px-3 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  className="h-8 w-full rounded-l-full border border-zinc-300 dark:border-zinc-700/80 bg-white/95 dark:bg-zinc-900/95 px-3 text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
                 />
                 {searchInput && (
                   <button
                     type="button"
                     onClick={handleClearSearch}
                     title="Clear search"
-                    className="absolute right-2 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                    className="absolute right-2 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 cursor-pointer"
                   >
                     <X className="size-3.5" />
                   </button>
@@ -610,7 +698,7 @@ export function YoutubeFeedSlot({
               <button
                 type="submit"
                 title="Search"
-                className="flex h-8 items-center justify-center rounded-r-full border border-l-0 border-zinc-700/80 bg-zinc-800 px-3.5 text-zinc-300 hover:bg-zinc-700 hover:text-white transition cursor-pointer shrink-0"
+                className="flex h-8 items-center justify-center rounded-r-full border border-l-0 border-zinc-300 dark:border-zinc-700/80 bg-zinc-100 dark:bg-zinc-800 px-3.5 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-950 dark:hover:text-white transition cursor-pointer shrink-0"
               >
                 <Search className="size-3.5" />
               </button>
@@ -621,16 +709,16 @@ export function YoutubeFeedSlot({
           <>
             {/* Left: YouTube Brand & Slot Indicator & Server */}
             <div className="flex items-center gap-1.5 @xs:gap-2 shrink-0">
-              <div className="flex items-center gap-1.5 font-bold tracking-tight text-white select-none shrink-0">
+              <div className="flex items-center gap-1.5 font-bold tracking-tight text-zinc-900 dark:text-white select-none shrink-0">
                 <span className="flex size-6 items-center justify-center rounded-lg bg-red-600 text-white shadow-xs">
                   <Play className="size-3 fill-current ml-0.5" />
                 </span>
-                <span className="hidden @sm:inline font-sans text-xs font-bold tracking-tight text-zinc-100">
+                <span className="hidden @sm:inline font-sans text-xs font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
                   YouTube
                 </span>
               </div>
 
-              <div className="flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-900/90 px-1.5 py-0.5 text-[10px] font-mono font-medium text-zinc-400 shrink-0">
+              <div className="flex items-center gap-1 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 px-1.5 py-0.5 text-[10px] font-mono font-medium text-zinc-600 dark:text-zinc-400 shrink-0">
                 <Radio className="size-2 text-emerald-400 animate-pulse" />
                 <span>0{slotIndex + 1}</span>
               </div>
@@ -647,8 +735,8 @@ export function YoutubeFeedSlot({
                 className={cn(
                   "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer select-none shrink-0",
                   selectedRegion === "KH"
-                    ? "border border-red-500/40 bg-red-950/60 text-red-300 hover:bg-red-900/70"
-                    : "border border-zinc-700 bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+                    ? "border border-red-500/40 bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/70"
+                    : "border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800/80 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-950 dark:hover:text-white"
                 )}
               >
                 {selectedRegion === "KH" ? (
@@ -678,14 +766,14 @@ export function YoutubeFeedSlot({
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   placeholder="Search YouTube..."
-                  className="h-8 w-full rounded-l-full border border-zinc-700/80 bg-zinc-900/90 px-3.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  className="h-8 w-full rounded-l-full border border-zinc-300 dark:border-zinc-700/80 bg-white/90 dark:bg-zinc-900/90 px-3.5 text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
                 />
                 {searchInput && (
                   <button
                     type="button"
                     onClick={handleClearSearch}
                     title="Clear search"
-                    className="absolute right-2 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                    className="absolute right-2 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 cursor-pointer"
                   >
                     <X className="size-3.5" />
                   </button>
@@ -694,7 +782,7 @@ export function YoutubeFeedSlot({
               <button
                 type="submit"
                 title="Search"
-                className="flex h-8 items-center justify-center rounded-r-full border border-l-0 border-zinc-700/80 bg-zinc-800 px-3.5 text-zinc-300 hover:bg-zinc-700 hover:text-white transition cursor-pointer"
+                className="flex h-8 items-center justify-center rounded-r-full border border-l-0 border-zinc-300 dark:border-zinc-700/80 bg-zinc-100 dark:bg-zinc-800 px-3.5 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-950 dark:hover:text-white transition cursor-pointer"
               >
                 <Search className="size-3.5" />
               </button>
@@ -710,7 +798,7 @@ export function YoutubeFeedSlot({
                   setTimeout(() => searchInputRef.current?.focus(), 50);
                 }}
                 title="Search YouTube"
-                className="flex size-7 items-center justify-center rounded-full text-zinc-300 hover:bg-zinc-800 hover:text-white transition cursor-pointer @md:hidden"
+                className="flex size-7 items-center justify-center rounded-full text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-950 dark:hover:text-white transition cursor-pointer @md:hidden"
               >
                 <Search className="size-3.5" />
               </button>
@@ -723,7 +811,7 @@ export function YoutubeFeedSlot({
                       <button
                         type="button"
                         title={`Connected as ${authStatus.user.name}`}
-                        className="flex size-7 items-center justify-center rounded-full ring-2 ring-emerald-500/70 overflow-hidden bg-zinc-800 transition hover:ring-emerald-400"
+                        className="flex size-7 items-center justify-center rounded-full ring-2 ring-emerald-500/70 overflow-hidden bg-zinc-100 dark:bg-zinc-800 transition hover:ring-emerald-400"
                       />
                     }
                   >
@@ -749,46 +837,72 @@ export function YoutubeFeedSlot({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="end"
-                    className="w-60 rounded-xl border border-zinc-800 bg-zinc-900 p-1.5 text-zinc-100 shadow-xl"
+                    className="w-60 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-1.5 text-zinc-900 dark:text-zinc-100 shadow-xl"
                   >
                     <DropdownMenuGroup>
                       <DropdownMenuLabel className="px-2 py-1.5">
                         <div className="font-semibold text-xs truncate">
                           {authStatus.user.name}
                         </div>
-                        <div className="text-[10px] text-zinc-400 truncate">
+                        <div className="text-[10px] text-zinc-600 dark:text-zinc-400 truncate">
                           {authStatus.user.email}
                         </div>
                         {authStatus.hasYouTubeScope ? (
                           <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
                             <CheckCircle2 className="size-3" />
-                            <span>YouTube Subscriptions Synced</span>
+                            <span>YouTube account synced</span>
                           </div>
                         ) : (
                           <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-400 font-medium">
                             <AlertTriangle className="size-3" />
-                            <span>YouTube Scope Missing</span>
+                            <span>
+                              {authStatus.needsReconnect
+                                ? "YouTube connection expired"
+                                : authStatus.hasGoogleAuth
+                                  ? "YouTube access not granted"
+                                  : "YouTube not connected"}
+                            </span>
                           </div>
                         )}
                       </DropdownMenuLabel>
                     </DropdownMenuGroup>
-                    <DropdownMenuSeparator className="my-1 bg-zinc-800" />
+                    <DropdownMenuSeparator className="my-1 bg-zinc-100 dark:bg-zinc-800" />
                     <DropdownMenuGroup>
                       {authStatus.hasYouTubeScope ? (
-                        <DropdownMenuItem
-                          onClick={() => handleSelectCategory("★ For You")}
-                          className="cursor-pointer gap-2 rounded-lg text-xs"
-                        >
-                          <Sparkles className="size-3.5 text-amber-400" />
-                          <span>My YouTube Feed</span>
-                        </DropdownMenuItem>
+                        <>
+                          <DropdownMenuItem
+                            onClick={() => handleSelectCategory(FOR_YOU)}
+                            className="cursor-pointer gap-2 rounded-lg text-xs"
+                          >
+                            <Sparkles className="size-3.5 text-amber-400" />
+                            <span>Home (For You)</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleSelectCategory(SUBSCRIPTIONS)}
+                            className="cursor-pointer gap-2 rounded-lg text-xs"
+                          >
+                            <Rss className="size-3.5 text-red-400" />
+                            <span>Subscriptions</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleSelectCategory(LIKED)}
+                            className="cursor-pointer gap-2 rounded-lg text-xs"
+                          >
+                            <ThumbsUp className="size-3.5 text-sky-400" />
+                            <span>Liked videos</span>
+                          </DropdownMenuItem>
+                        </>
                       ) : (
                         <DropdownMenuItem
                           onClick={handleGoogleSignIn}
-                          className="cursor-pointer gap-2 rounded-lg text-xs text-amber-300 focus:bg-amber-500/15"
+                          className="cursor-pointer gap-2 rounded-lg text-xs text-amber-700 dark:text-amber-300 focus:bg-amber-500/15"
                         >
                           <RefreshCw className="size-3.5 text-amber-400" />
-                          <span>Sync YouTube Subscriptions</span>
+                          <span>
+                            {authStatus.hasGoogleAuth
+                              ? "Reconnect YouTube"
+                              : "Sync YouTube Subscriptions"}
+                          </span>
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuItem
@@ -808,10 +922,10 @@ export function YoutubeFeedSlot({
                   onClick={handleGoogleSignIn}
                   disabled={isSigningIn}
                   title="Sign in with Google & sync YouTube in 1 click"
-                  className="flex h-7 items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800/90 px-2 text-[11px] font-semibold text-zinc-200 hover:border-zinc-500 hover:bg-zinc-700 hover:text-white transition shadow-xs active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
+                  className="flex h-7 items-center gap-1.5 rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800/90 px-2 text-[11px] font-semibold text-zinc-800 dark:text-zinc-200 hover:border-zinc-400 dark:hover:border-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-950 dark:hover:text-white transition shadow-xs active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
                 >
                   {isSigningIn ? (
-                    <Loader2 className="size-3 animate-spin text-zinc-300" />
+                    <Loader2 className="size-3 animate-spin text-zinc-700 dark:text-zinc-300" />
                   ) : (
                     <GoogleIcon className="size-3" />
                   )}
@@ -825,7 +939,7 @@ export function YoutubeFeedSlot({
                 onClick={handleRefresh}
                 disabled={isLoading}
                 title="Refresh feed"
-                className="flex size-7 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition disabled:opacity-50 cursor-pointer"
+                className="flex size-7 items-center justify-center rounded-full text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-200 transition disabled:opacity-50 cursor-pointer"
               >
                 <RefreshCw
                   className={cn("size-3.5", isLoading && "animate-spin")}
@@ -837,7 +951,7 @@ export function YoutubeFeedSlot({
                   type="button"
                   onClick={onClose}
                   title="Return to Player"
-                  className="flex size-7 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition cursor-pointer"
+                  className="flex size-7 items-center justify-center rounded-full text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-200 transition cursor-pointer"
                 >
                   <X className="size-4" />
                 </button>
@@ -848,7 +962,7 @@ export function YoutubeFeedSlot({
       </div>
 
       {/* ── Category Chips Bar (Scrollable horizontally with smooth touch/mouse scroll) ── */}
-      <div className="relative flex shrink-0 items-center border-b border-zinc-800/80 bg-[#0f0f0f] px-1.5 py-1.5">
+      <div className="relative flex shrink-0 items-center border-b border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-[#0f0f0f] px-1.5 py-1.5">
         <style>{`
           .yt-chips-container::-webkit-scrollbar {
             display: none !important;
@@ -874,12 +988,12 @@ export function YoutubeFeedSlot({
 
         {/* Left Scroll Chevron with Gradient Fade */}
         {canScrollChipsLeft && (
-          <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center pr-8 pl-1 bg-gradient-to-r from-[#0f0f0f] via-[#0f0f0f]/95 to-transparent pointer-events-none">
+          <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center pr-8 pl-1 bg-gradient-to-r from-white dark:from-[#0f0f0f] via-white/95 dark:via-[#0f0f0f]/95 to-transparent pointer-events-none">
             <button
               type="button"
               onClick={() => scrollChips("left")}
               title="Previous categories"
-              className="pointer-events-auto flex size-7 items-center justify-center rounded-full bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/60 text-white shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
+              className="pointer-events-auto flex size-7 items-center justify-center rounded-full bg-white/90 dark:bg-zinc-900/90 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-700/60 text-zinc-900 dark:text-white shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -898,24 +1012,46 @@ export function YoutubeFeedSlot({
         >
           {categoriesList.map((category) => {
             const isActive = activeCategory === category;
-            const isForYou = category === "★ For You";
+            const isForYou = category === FOR_YOU;
+            const isSynced = Boolean(PERSONAL_FEEDS[category]);
             return (
               <button
                 key={category}
                 type="button"
                 onClick={() => handleSelectCategory(category)}
+                aria-pressed={isActive}
                 className={cn(
                   "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150 select-none cursor-pointer",
                   isActive
                     ? isForYou
                       ? "bg-gradient-to-r from-red-600 to-amber-600 text-white shadow-xs font-semibold"
-                      : "bg-white text-zinc-950 font-semibold shadow-xs"
-                    : isForYou
-                      ? "border border-red-500/40 bg-red-950/40 text-red-300 hover:bg-red-900/50"
-                      : "bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+                      : "bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 font-semibold shadow-xs"
+                    : isSynced
+                      ? "border border-red-500/40 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50"
+                      : "bg-zinc-100 dark:bg-zinc-800/80 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-950 dark:hover:text-white"
                 )}
               >
-                {category === "Live" ? (
+                {category === CONTINUE ? (
+                  <span className="flex items-center gap-1">
+                    <History className="size-3" />
+                    Continue watching
+                  </span>
+                ) : category === HISTORY ? (
+                  <span className="flex items-center gap-1">
+                    <Clock className="size-3" />
+                    History
+                  </span>
+                ) : category === SUBSCRIPTIONS ? (
+                  <span className="flex items-center gap-1">
+                    <Rss className="size-3" />
+                    Subscriptions
+                  </span>
+                ) : category === LIKED ? (
+                  <span className="flex items-center gap-1">
+                    <ThumbsUp className="size-3" />
+                    Liked
+                  </span>
+                ) : category === "Live" ? (
                   <span className="flex items-center gap-1">
                     <span className="size-1.5 rounded-full bg-red-500 animate-pulse" />
                     Live
@@ -929,7 +1065,7 @@ export function YoutubeFeedSlot({
                   </span>
                 ) : isForYou ? (
                   <span className="flex items-center gap-1">
-                    <Sparkles className="size-3 text-amber-300" />
+                    <Sparkles className="size-3 text-amber-700 dark:text-amber-300" />
                     For You
                   </span>
                 ) : (
@@ -942,12 +1078,12 @@ export function YoutubeFeedSlot({
 
         {/* Right Scroll Chevron with Gradient Fade */}
         {canScrollChipsRight && (
-          <div className="absolute right-0 top-0 bottom-0 z-10 flex items-center pl-8 pr-1 bg-gradient-to-l from-[#0f0f0f] via-[#0f0f0f]/95 to-transparent pointer-events-none">
+          <div className="absolute right-0 top-0 bottom-0 z-10 flex items-center pl-8 pr-1 bg-gradient-to-l from-white dark:from-[#0f0f0f] via-white/95 dark:via-[#0f0f0f]/95 to-transparent pointer-events-none">
             <button
               type="button"
               onClick={() => scrollChips("right")}
               title="Next categories"
-              className="pointer-events-auto flex size-7 items-center justify-center rounded-full bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/60 text-white shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
+              className="pointer-events-auto flex size-7 items-center justify-center rounded-full bg-white/90 dark:bg-zinc-900/90 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-700/60 text-zinc-900 dark:text-white shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
             >
               <ChevronRight className="size-4" />
             </button>
@@ -959,7 +1095,7 @@ export function YoutubeFeedSlot({
       {!authStatus.isLoggedIn &&
         authStatus.isGoogleConfigured &&
         !dismissBanner && (
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/80 px-3 py-1.5 text-[11px] text-zinc-300">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 dark:border-zinc-800/80 bg-zinc-50 dark:bg-zinc-900/80 px-3 py-1.5 text-[11px] text-zinc-700 dark:text-zinc-300">
           <div className="flex items-center gap-1.5 min-w-0">
             <Sparkles className="size-3.5 shrink-0 text-amber-400" />
             <span className="truncate">
@@ -971,10 +1107,10 @@ export function YoutubeFeedSlot({
               type="button"
               onClick={handleGoogleSignIn}
               disabled={isSigningIn}
-              className="flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/30 transition cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/30 transition cursor-pointer disabled:opacity-50"
             >
               {isSigningIn ? (
-                <Loader2 className="size-3 animate-spin text-emerald-300" />
+                <Loader2 className="size-3 animate-spin text-emerald-700 dark:text-emerald-300" />
               ) : (
                 <GoogleIcon className="size-3" />
               )}
@@ -984,7 +1120,7 @@ export function YoutubeFeedSlot({
               type="button"
               onClick={() => setDismissBanner(true)}
               title="Dismiss"
-              className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
+              className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 cursor-pointer"
             >
               <X className="size-3" />
             </button>
@@ -997,7 +1133,7 @@ export function YoutubeFeedSlot({
         authStatus.isGoogleConfigured &&
         !authStatus.hasGoogleAuth &&
         !dismissBanner && (
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-emerald-950/40 bg-emerald-950/20 px-3 py-1.5 text-[11px] text-emerald-200">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-emerald-200 dark:border-emerald-950/40 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1.5 text-[11px] text-emerald-800 dark:text-emerald-200">
             <div className="flex items-center gap-1.5 truncate">
               <Sparkles className="size-3.5 shrink-0 text-emerald-400" />
               <span className="truncate">
@@ -1009,17 +1145,17 @@ export function YoutubeFeedSlot({
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={isSigningIn}
-                className="flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/30 transition cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/30 transition cursor-pointer disabled:opacity-50"
               >
                 {isSigningIn && (
-                  <Loader2 className="size-3 animate-spin text-emerald-300" />
+                  <Loader2 className="size-3 animate-spin text-emerald-700 dark:text-emerald-300" />
                 )}
                 <span>Connect & Sync</span>
               </button>
               <button
                 type="button"
                 onClick={() => setDismissBanner(true)}
-                className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 cursor-pointer"
               >
                 <X className="size-3" />
               </button>
@@ -1027,18 +1163,69 @@ export function YoutubeFeedSlot({
           </div>
         )}
 
-      {/* ── Personalized Feed Indicator ── */}
+      {/* ── Banner: Google linked but YouTube access expired / not granted ── */}
+      {authStatus.isLoggedIn &&
+        authStatus.isGoogleConfigured &&
+        authStatus.hasGoogleAuth &&
+        !authStatus.hasYouTubeScope &&
+        !dismissBanner && (
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/25 px-3 py-1.5 text-[11px] text-amber-800 dark:text-amber-200">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <AlertTriangle className="size-3.5 shrink-0 text-amber-400" />
+              <span className="truncate">
+                {authStatus.needsReconnect
+                  ? "YouTube connection expired — reconnect to keep syncing."
+                  : "Allow YouTube access to sync your subscriptions & likes."}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={isSigningIn}
+                className="flex items-center gap-1 rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-200 hover:bg-amber-500/30 transition cursor-pointer disabled:opacity-50"
+              >
+                {isSigningIn ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <GoogleIcon className="size-3" />
+                )}
+                <span>Reconnect</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissBanner(true)}
+                title="Dismiss"
+                className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 cursor-pointer"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          </div>
+        )}
+
+      {/* ── Synced Feed Indicator ── */}
       {isPersonalized && (
-        <div className="flex shrink-0 items-center justify-between border-b border-red-500/20 bg-red-950/20 px-3 py-1 text-[10px] text-red-300 font-medium">
+        <div className="flex shrink-0 items-center justify-between border-b border-red-500/20 bg-red-50 dark:bg-red-950/20 px-3 py-1 text-[10px] text-red-700 dark:text-red-300 font-medium">
           <span className="flex items-center gap-1 truncate">
-            <Sparkles className="size-3 text-amber-400 shrink-0" />
+            {feedKind === "subscriptions" ? (
+              <Rss className="size-3 text-red-400 shrink-0" />
+            ) : feedKind === "liked" ? (
+              <ThumbsUp className="size-3 text-sky-400 shrink-0" />
+            ) : (
+              <Sparkles className="size-3 text-amber-400 shrink-0" />
+            )}
             <span className="truncate">
-              {selectedRegion === "KH"
-                ? "Personalized Feed: Subscriptions & 🇰🇭 Khmer Recommendations"
-                : "Personalized Feed: Subscriptions & Recommendations"}
+              {feedKind === "subscriptions"
+                ? "Subscriptions · latest from your channels"
+                : feedKind === "liked"
+                  ? "Liked videos · from your YouTube account"
+                  : selectedRegion === "KH"
+                    ? "Home · your subscriptions + 🇰🇭 recommendations"
+                    : "Home · your subscriptions + recommendations"}
             </span>
           </span>
-          <span className="text-zinc-400 font-mono text-[10px] ml-2 shrink-0">
+          <span className="text-zinc-600 dark:text-zinc-400 font-mono text-[10px] ml-2 shrink-0">
             {videos.length} videos
           </span>
         </div>
@@ -1054,12 +1241,12 @@ export function YoutubeFeedSlot({
           <div className="grid grid-cols-1 @sm:grid-cols-2 @xl:grid-cols-3 @3xl:grid-cols-4 gap-x-3 gap-y-4 @sm:gap-x-4 @sm:gap-y-5">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex flex-col gap-2 animate-pulse">
-                <div className="aspect-video w-full rounded-xl bg-zinc-800/80" />
+                <div className="aspect-video w-full rounded-xl bg-zinc-100 dark:bg-zinc-800/80" />
                 <div className="flex gap-2.5 pt-1">
-                  <div className="size-8 rounded-full bg-zinc-800 shrink-0" />
+                  <div className="size-8 rounded-full bg-zinc-100 dark:bg-zinc-800 shrink-0" />
                   <div className="flex-1 space-y-1.5 pt-0.5">
-                    <div className="h-3 w-4/5 rounded bg-zinc-800" />
-                    <div className="h-2.5 w-1/2 rounded bg-zinc-800/80" />
+                    <div className="h-3 w-4/5 rounded bg-zinc-100 dark:bg-zinc-800" />
+                    <div className="h-2.5 w-1/2 rounded bg-zinc-100 dark:bg-zinc-800/80" />
                   </div>
                 </div>
               </div>
@@ -1068,21 +1255,27 @@ export function YoutubeFeedSlot({
         ) : videos.length === 0 ? (
           /* Empty State */
           <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-zinc-800/80 text-zinc-400">
+            <div className="flex size-12 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400">
               <Search className="size-6" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-zinc-200">
-                No YouTube videos found
+              <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                {activeCategory === CONTINUE
+                  ? "Nothing to continue"
+                  : activeCategory === HISTORY
+                    ? "No watch history yet"
+                    : "No YouTube videos found"}
               </p>
               <p className="mt-0.5 text-xs text-zinc-500">
-                Try searching for something else or pick a category above
+                {isLocalFeed
+                  ? "Videos you play in TCT MultiStream show up here"
+                  : "Try searching for something else or pick a category above"}
               </p>
             </div>
             <button
               type="button"
               onClick={() => handleSelectCategory("All")}
-              className="mt-1 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-700 cursor-pointer"
+              className="mt-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 cursor-pointer"
             >
               Reset to All
             </button>
@@ -1102,7 +1295,7 @@ export function YoutubeFeedSlot({
                   )}
                 >
                   {/* Thumbnail Container */}
-                  <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-zinc-900 shadow-sm">
+                  <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-900 shadow-sm">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={video.thumbnail}
@@ -1122,12 +1315,57 @@ export function YoutubeFeedSlot({
                           <span className="size-1.5 rounded-full bg-white animate-pulse" />
                           LIVE
                         </span>
+                      ) : video.isUpcoming ? (
+                        <span className="rounded bg-black/80 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-white uppercase shadow-xs">
+                          Upcoming
+                        </span>
                       ) : video.duration ? (
                         <span className="rounded bg-black/80 backdrop-blur-xs px-1.5 py-0.5 text-[10px] font-medium text-white shadow-xs">
                           {video.duration}
                         </span>
                       ) : null}
                     </div>
+
+                    {/* Watch progress (like YouTube's red bar) */}
+                    {!video.isLive && (progress[video.videoId]?.d ?? 0) > 0 && (
+                      <div className="absolute inset-x-0 bottom-0 z-10 h-1 bg-white/40" aria-hidden>
+                        <div
+                          className="h-full bg-red-600"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              (progress[video.videoId].t / progress[video.videoId].d) * 100
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Remind me (upcoming streams) */}
+                    {video.isUpcoming && video.scheduledAt && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleReminder(video);
+                        }}
+                        aria-pressed={Boolean(reminders[video.videoId])}
+                        title={reminders[video.videoId] ? "Remove reminder" : "Remind me when it starts"}
+                        className={cn(
+                          "absolute top-1.5 left-1.5 z-20 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold shadow-xs backdrop-blur-xs transition cursor-pointer",
+                          reminders[video.videoId]
+                            ? "bg-amber-500 text-black hover:bg-amber-400"
+                            : "bg-black/80 text-white hover:bg-zinc-800"
+                        )}
+                      >
+                        {reminders[video.videoId] ? (
+                          <BellRing className="size-3" />
+                        ) : (
+                          <Bell className="size-3" />
+                        )}
+                        {reminders[video.videoId] ? "Reminder set" : "Remind me"}
+                      </button>
+                    )}
 
                     {/* Hover Overlay with Play Button */}
                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity duration-150 group-hover/card:opacity-100 backdrop-blur-[1px]">
@@ -1142,12 +1380,27 @@ export function YoutubeFeedSlot({
                         In Slot
                       </div>
                     )}
+
+                    {onQueueVideo && !inGrid && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onQueueVideo(video.videoId, video.title);
+                        }}
+                        title="Add to this tile's Up next queue"
+                        className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 shadow-xs backdrop-blur-xs transition hover:bg-zinc-800 focus-visible:opacity-100 group-hover/card:opacity-100 cursor-pointer"
+                      >
+                        <ListPlus className="size-3" />
+                        Queue
+                      </button>
+                    )}
                   </div>
 
                   {/* Metadata Row: Avatar + Details */}
                   <div className="mt-2 flex items-start gap-2.5">
                     {/* Channel Avatar */}
-                    <div className="size-8 shrink-0 overflow-hidden rounded-full bg-zinc-800 ring-1 ring-zinc-800">
+                    <div className="size-8 shrink-0 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 ring-1 ring-zinc-200 dark:ring-zinc-800">
                       {video.channelAvatar ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -1161,7 +1414,7 @@ export function YoutubeFeedSlot({
                           }}
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center font-bold text-zinc-400 text-xs">
+                        <div className="flex h-full w-full items-center justify-center font-bold text-zinc-600 dark:text-zinc-400 text-xs">
                           {video.channelName.charAt(0)}
                         </div>
                       )}
@@ -1170,17 +1423,17 @@ export function YoutubeFeedSlot({
                     {/* Details: Title, Channel, Views, Time */}
                     <div className="min-w-0 flex-1">
                       <h3
-                        className="line-clamp-2 text-xs @sm:text-[13px] font-semibold leading-snug text-zinc-100 group-hover/card:text-red-400 transition-colors"
+                        className="line-clamp-2 text-xs @sm:text-[13px] font-semibold leading-snug text-zinc-900 dark:text-zinc-100 group-hover/card:text-red-400 transition-colors"
                         title={video.title}
                       >
                         {video.title}
                       </h3>
 
-                      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-400 group-hover/card:text-zinc-300 truncate">
+                      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-600 dark:text-zinc-400 group-hover/card:text-zinc-800 dark:group-hover/card:text-zinc-300 truncate">
                         <span className="truncate">{video.channelName}</span>
                       </div>
 
-                      <div className="mt-0.5 flex items-center gap-1 text-[10px] @sm:text-[11px] text-zinc-400 truncate">
+                      <div className="mt-0.5 flex items-center gap-1 text-[10px] @sm:text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
                         {video.isLive ? (
                           <span className="flex items-center gap-1 font-semibold text-red-500">
                             <span className="size-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -1208,7 +1461,7 @@ export function YoutubeFeedSlot({
           className="h-10 w-full flex items-center justify-center py-4"
         >
           {isLoadingMore && (
-            <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
               <Loader2 className="size-4 animate-spin text-red-500" />
               <span>Loading more videos from YouTube...</span>
             </div>

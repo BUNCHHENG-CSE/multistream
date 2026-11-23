@@ -6,6 +6,7 @@ import { getCurrentUser, getUserLayouts } from "@/actions/layouts";
 import { Navbar } from "@/components/Navbar";
 import { StreamGrid } from "@/components/StreamGrid";
 import { LiveChatSidebar } from "@/components/LiveChatSidebar";
+import { PlaybackBackgroundTasks } from "@/components/PlaybackBackgroundTasks";
 
 async function AuthenticatedNavbar() {
   await connection();
@@ -38,6 +39,7 @@ export default function HomePage() {
         <StreamGrid />
         <LiveChatSidebar />
       </main>
+      <PlaybackBackgroundTasks />
 
       {/* Semantic SEO section for search engine crawlers and screen readers */}
       <section

@@ -57,6 +57,7 @@ import {
   GRID_PRESET_META,
   GridPresetIcon,
 } from "@/components/GridPresetIcon";
+import { PlaybackMenu } from "@/components/PlaybackMenu";
 import { AudioMixerSheet } from "@/components/AudioMixerSheet";
 import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
 import { ShareExportDialog } from "@/components/ShareExportDialog";
@@ -187,7 +188,7 @@ export function Navbar({
   const hasActiveAudio = unmutedVideoIds.length > 0;
 
   return (
-    <header className="relative z-30 flex min-h-14 w-full shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-zinc-200/80 bg-white/85 px-2.5 py-1.5 shadow-2xs backdrop-blur-xl transition-colors duration-200 md:h-15 md:flex-nowrap md:px-3 md:py-0 lg:px-4 dark:border-zinc-800/80 dark:bg-zinc-950/90">
+    <header data-app-header className="relative z-30 flex min-h-14 w-full shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-zinc-200/80 bg-white/85 px-2.5 py-1.5 shadow-2xs backdrop-blur-xl transition-colors duration-200 md:h-15 md:flex-nowrap md:px-3 md:py-0 lg:px-4 dark:border-zinc-800/80 dark:bg-zinc-950/90">
       {/* Subtle top highlight line */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-500/35 to-transparent" />
 
@@ -601,6 +602,9 @@ export function Navbar({
         {/* Central Audio Mixer Console */}
         <AudioMixerSheet />
 
+        {/* Sleep timer + playback automation */}
+        <PlaybackMenu />
+
         {/* Instant Share, QR, JSON Backup & Watch Party */}
         <ShareExportDialog />
 
@@ -659,8 +663,10 @@ export function Navbar({
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => {
-                    clearAllStreams();
-                    toast.info("Cleared all streams from grid");
+                    const undo = clearAllStreams();
+                    toast.info("Cleared all streams from grid", {
+                      action: { label: "Undo", onClick: undo },
+                    });
                   }}
                   className="hidden size-8 rounded-lg text-zinc-500 hover:bg-red-500/10 hover:text-red-600 xl:inline-flex dark:text-zinc-400 dark:hover:bg-red-500/15 dark:hover:text-red-400"
                 />
@@ -846,8 +852,10 @@ export function Navbar({
 
                     <DropdownMenuItem
                       onClick={() => {
-                        clearAllStreams();
-                        toast.info("Cleared all streams from grid");
+                        const undo = clearAllStreams();
+                        toast.info("Cleared all streams from grid", {
+                          action: { label: "Undo", onClick: undo },
+                        });
                       }}
                       className="cursor-pointer justify-between rounded-lg px-2.5 py-1.5 text-xs text-red-600 focus:bg-red-500/10 focus:text-red-600 dark:text-red-400"
                     >

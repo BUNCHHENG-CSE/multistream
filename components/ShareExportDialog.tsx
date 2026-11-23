@@ -39,8 +39,17 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  dispatchRemotePlayback,
+  getPartyClientId,
+  getPartyDisplayName,
+  onLocalPlayback,
+  usePartyStore,
+  type PartyChatMessage,
+  type PartyPlaybackEvent,
+} from "@/lib/party-client";
 import { useStreamStore } from "@/store/useStreamStore";
-import { isValidYouTubeVideoId } from "@/lib/youtube";
+import { getStreamPlatform, isValidYouTubeVideoId } from "@/lib/youtube";
 import type { GridPreset, SavedStreamItem } from "@/db/schema";
 import { cn } from "@/lib/utils";
 
@@ -143,6 +152,8 @@ export function ShareExportDialog() {
   const triggerFloatingReaction = useStreamStore(
     (s) => s.triggerFloatingReaction
   );
+  const addPartyMessages = usePartyStore((s) => s.addMessages);
+  const resetPartyChat = usePartyStore((s) => s.resetChat);
 
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("share");
@@ -155,7 +166,7 @@ export function ShareExportDialog() {
   const clientIdRef = useRef<string>("");
   useEffect(() => {
     if (!clientIdRef.current) {
-      clientIdRef.current = `peer-${Math.random().toString(36).slice(2, 10)}`;
+      clientIdRef.current = getPartyClientId();
     }
   }, []);
 
@@ -177,6 +188,8 @@ export function ShareExportDialog() {
   const lastRemoteLayoutAtRef = useRef<number>(0);
   const lastRemoteSyncAtRef = useRef<number>(0);
   const lastReactionAtRef = useRef<number>(0);
+  const lastMessageAtRef = useRef<number>(0);
+  const lastPlaybackAtRef = useRef<Record<string, number>>({});
 
   const origin = useSyncExternalStore(
     emptySubscribe,
@@ -207,7 +220,8 @@ export function ShareExportDialog() {
             streams: SavedStreamItem[];
           }
         | { type: "SYNC_LIVE" }
-        | { type: "REACTION"; emoji: string; sender?: string };
+        | { type: "REACTION"; emoji: string; sender?: string }
+        | ({ type: "PLAYBACK" } & PartyPlaybackEvent);
 
       if (!msg || typeof msg !== "object") return;
 
@@ -227,6 +241,13 @@ export function ShareExportDialog() {
         toast.info(`Party Room ${cleanCode}: Synced to live edge`);
       } else if (msg.type === "REACTION" && msg.emoji) {
         triggerFloatingReaction(msg.emoji, msg.sender);
+      } else if (msg.type === "PLAYBACK" && msg.videoId) {
+        dispatchRemotePlayback({
+          videoId: msg.videoId,
+          state: msg.state,
+          time: msg.time,
+          at: msg.at,
+        });
       }
     };
 
@@ -241,16 +262,45 @@ export function ShareExportDialog() {
     triggerFloatingReaction,
   ]);
 
+  // Send this viewer's play / pause / seek to the room
+  useEffect(() => {
+    if (!partyEnabled) return;
+    const cleanCode = roomCode.trim().toUpperCase() || "STUDIO-ALPHA";
+    return onLocalPlayback((ev) => {
+      if (typeof BroadcastChannel !== "undefined") {
+        const channel = new BroadcastChannel(`tct-party-${cleanCode}`);
+        channel.postMessage({ type: "PLAYBACK", ...ev });
+        channel.close();
+      }
+      if (getStreamPlatform(ev.videoId) !== "youtube") return;
+      fetch("/api/party", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "PLAYBACK",
+          roomCode: cleanCode,
+          clientId: clientIdRef.current || getPartyClientId(),
+          videoId: ev.videoId,
+          state: ev.state,
+          time: Math.max(0, ev.time),
+        }),
+      }).catch(() => {});
+    });
+  }, [partyEnabled, roomCode]);
+
   // Cross-Device Cloud Watch Party polling sync (/api/party)
   useEffect(() => {
     if (!partyEnabled) return;
+    lastMessageAtRef.current = 0;
+    lastPlaybackAtRef.current = {};
+    resetPartyChat();
     const cleanCode = roomCode.trim().toUpperCase() || "STUDIO-ALPHA";
     const clientId = clientIdRef.current || "peer-anon";
 
     const pollRoom = async () => {
       try {
         const res = await fetch(
-          `/api/party?room=${encodeURIComponent(cleanCode)}&clientId=${encodeURIComponent(clientId)}&since=${lastReactionAtRef.current}`,
+          `/api/party?room=${encodeURIComponent(cleanCode)}&clientId=${encodeURIComponent(clientId)}&since=${lastReactionAtRef.current}&msgSince=${lastMessageAtRef.current}`,
           { cache: "no-store" }
         );
         if (!res.ok) return;
@@ -263,6 +313,12 @@ export function ShareExportDialog() {
           syncLiveAt?: number;
           syncLiveBy?: string;
           peerCount?: number;
+          serverTime?: number;
+          playback?: Record<
+            string,
+            { state: "playing" | "paused"; time: number; at: number; by: string }
+          >;
+          messages?: PartyChatMessage[];
           reactions?: Array<{
             id: string;
             emoji: string;
@@ -274,6 +330,33 @@ export function ShareExportDialog() {
 
         if (typeof data.peerCount === "number") {
           setPeerCount(data.peerCount);
+        }
+
+        // Synced playback: convert server timestamps to this device's clock
+        if (data.exists && data.playback && typeof data.serverTime === "number") {
+          const skew = data.serverTime - Date.now();
+          for (const [videoId, ev] of Object.entries(data.playback)) {
+            if (ev.by === clientId) continue;
+            if (ev.at <= (lastPlaybackAtRef.current[videoId] ?? 0)) continue;
+            lastPlaybackAtRef.current[videoId] = ev.at;
+            // Ignore stale state older than 30 min (e.g. a room left idle)
+            if (data.serverTime - ev.at > 30 * 60_000) continue;
+            dispatchRemotePlayback({
+              videoId,
+              state: ev.state,
+              time: ev.time,
+              at: ev.at - skew,
+            });
+          }
+        }
+
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          for (const m of data.messages) {
+            if (m.createdAt > lastMessageAtRef.current) {
+              lastMessageAtRef.current = m.createdAt;
+            }
+          }
+          addPartyMessages(data.messages);
         }
 
         if (
@@ -333,6 +416,8 @@ export function ShareExportDialog() {
     loadLayoutConfig,
     triggerSyncAllLive,
     triggerFloatingReaction,
+    addPartyMessages,
+    resetPartyChat,
   ]);
 
   // Broadcast local changes to both BroadcastChannel & /api/party
@@ -399,7 +484,7 @@ export function ShareExportDialog() {
       triggerFloatingReaction(emoji, "You");
       if (typeof BroadcastChannel !== "undefined") {
         const channel = new BroadcastChannel(`tct-party-${cleanCode}`);
-        channel.postMessage({ type: "REACTION", emoji, sender: "Peer" });
+        channel.postMessage({ type: "REACTION", emoji, sender: getPartyDisplayName() });
         channel.close();
       }
       fetch("/api/party", {
@@ -410,7 +495,7 @@ export function ShareExportDialog() {
           roomCode: cleanCode,
           clientId: clientIdRef.current || "peer-anon",
           emoji,
-          sender: "Peer",
+          sender: getPartyDisplayName(),
         }),
       }).catch(() => {});
     },

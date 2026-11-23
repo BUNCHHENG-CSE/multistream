@@ -32,6 +32,7 @@ import { FloatingPipDock } from "@/components/FloatingPipDock";
 import { BookmarksDialog } from "@/components/BookmarksDialog";
 import { StudioTelemetryBar } from "@/components/StudioTelemetryBar";
 import { WatchPartyReactions } from "@/components/WatchPartyReactions";
+import { StreamPager } from "@/components/StreamPager";
 import {
   GRID_PRESET_META,
   GridPresetIcon,
@@ -1341,6 +1342,9 @@ export function StreamGrid() {
           );
         })}
       </div>
+
+      {/* 1x1 pager: swipe / arrows to rotate streams */}
+      {gridPreset === "1x1" && <StreamPager />}
 
       {/* Overflow Standby Bar if current preset shows fewer slots than total loaded streams */}
       {hiddenStreams.length > 0 && (

@@ -10,7 +10,72 @@ export type YouTubePlayerCommand =
   | "setPlaybackQuality"
   | "setPlaybackQualityRange"
   | "setPlaybackRate"
-  | "seekTo";
+  | "seekTo"
+  | "loadModule"
+  | "unloadModule"
+  | "setOption";
+
+/** YouTube IFrame player states reported via `onStateChange` / `infoDelivery.playerState`. */
+export const YT_PLAYER_STATE = {
+  UNSTARTED: -1,
+  ENDED: 0,
+  PLAYING: 1,
+  PAUSED: 2,
+  BUFFERING: 3,
+  CUED: 5,
+} as const;
+
+/** Caption languages offered in the CC menu ("" = the video's default track). */
+export const YOUTUBE_CAPTION_LANGUAGES: Array<{ value: string; label: string }> = [
+  { value: "", label: "Default track" },
+  { value: "en", label: "English" },
+  { value: "km", label: "Khmer" },
+  { value: "th", label: "Thai" },
+  { value: "vi", label: "Vietnamese" },
+  { value: "zh-Hans", label: "Chinese (Simplified)" },
+  { value: "ja", label: "Japanese" },
+  { value: "ko", label: "Korean" },
+  { value: "fr", label: "French" },
+  { value: "es", label: "Spanish" },
+];
+
+/** Caption font sizes supported by the player's `captions.fontSize` option. */
+export const YOUTUBE_CAPTION_SIZES: Array<{ value: number; label: string }> = [
+  { value: -1, label: "Small" },
+  { value: 0, label: "Normal" },
+  { value: 1, label: "Large" },
+  { value: 2, label: "Extra large" },
+  { value: 3, label: "Huge" },
+];
+
+/**
+ * Turns closed captions on/off and applies language + size through the IFrame API.
+ * Language codes only take effect when the video actually provides that track.
+ */
+export function applyYouTubeCaptions(
+  iframe: HTMLIFrameElement | null | undefined,
+  options: { enabled: boolean; languageCode: string; fontSize: number }
+): void {
+  if (!iframe) return;
+  if (!options.enabled) {
+    sendYouTubeCommand(iframe, "setOption", ["captions", "track", {}]);
+    sendYouTubeCommand(iframe, "unloadModule", ["captions"]);
+    return;
+  }
+  sendYouTubeCommand(iframe, "loadModule", ["captions"]);
+  if (options.languageCode) {
+    sendYouTubeCommand(iframe, "setOption", [
+      "captions",
+      "track",
+      { languageCode: options.languageCode },
+    ]);
+  }
+  sendYouTubeCommand(iframe, "setOption", [
+    "captions",
+    "fontSize",
+    options.fontSize,
+  ]);
+}
 
 export type YouTubeQualityLevel =
   | "auto"
@@ -604,6 +669,7 @@ export function getYouTubeEmbedUrl(
     playsinline: "1",
     rel: "0",
     modestbranding: "1",
+    iv_load_policy: "3",
   });
 
   if (options?.origin) {

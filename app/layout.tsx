@@ -99,6 +99,13 @@ export const metadata: Metadata = {
     google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
   },
   manifest: "/manifest.webmanifest",
+  // iOS / iPadOS "Add to Home Screen": open full-screen with a short name
+  appleWebApp: {
+    capable: true,
+    title: siteConfig.name,
+    statusBarStyle: "black",
+  },
+  formatDetection: { telephone: false },
 };
 
 export default function RootLayout({

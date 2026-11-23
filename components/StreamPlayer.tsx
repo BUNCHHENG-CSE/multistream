@@ -22,7 +22,11 @@ import {
   ExternalLink,
   Maximize2,
   Minimize2,
-  Settings,
+  Captions,
+  CaptionsOff,
+  Repeat,
+  Languages,
+  Type,
   Gauge,
   SlidersHorizontal,
   Zap,
@@ -35,7 +39,23 @@ import {
   PictureInPicture2,
   Bookmark,
   MoreHorizontal,
+  ListVideo,
+  SkipForward,
+  Trash2,
+  Link2,
 } from "lucide-react";
+import { usePlaybackStore, formatClock } from "@/store/usePlaybackStore";
+import {
+  setPlayerClock,
+  clearPlayerClock,
+  getPlayerClock,
+} from "@/lib/player-clock";
+import { loadTwitchPlayerApi, type TwitchPlayer } from "@/lib/twitch-player";
+import {
+  emitLocalPlayback,
+  onRemotePlayback,
+  suppressLocalPlayback,
+} from "@/lib/party-client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,11 +84,16 @@ import {
   getStreamExternalUrl,
   getStreamPlatform,
   getStreamPlatformMeta,
+  getStreamRawId,
   sendYouTubeCommand,
   sendYouTubeListening,
+  applyYouTubeCaptions,
   formatYouTubeQualityLabel,
+  YOUTUBE_CAPTION_LANGUAGES,
+  YOUTUBE_CAPTION_SIZES,
   YOUTUBE_PLAYBACK_SPEEDS,
   YOUTUBE_QUALITY_OPTIONS,
+  YT_PLAYER_STATE,
   type YouTubeQualityLevel,
 } from "@/lib/youtube";
 import { useStreamStore, type StreamItem } from "@/store/useStreamStore";
@@ -76,6 +101,50 @@ import { YoutubeFeedSlot } from "@/components/YoutubeFeedSlot";
 import { cn } from "@/lib/utils";
 
 const emptySubscribe = () => () => {};
+
+/**
+ * Finds a live stream to take over a tile whose broadcast ended:
+ * live-now from the user's YouTube subscriptions first, then the curated list.
+ */
+async function findLiveReplacement(
+  currentVideoId: string
+): Promise<{ videoId: string; title: string; fromSubscriptions: boolean } | null> {
+  const active = new Set(
+    useStreamStore.getState().streams.map((s) => s.videoId)
+  );
+  active.add(currentVideoId);
+
+  try {
+    let region = "KH";
+    try {
+      region = localStorage.getItem("tct_yt_feed_region") || "KH";
+    } catch {
+      // storage unavailable
+    }
+    const res = await fetch(
+      `/api/youtube-feed?feed=subscriptions&region=${encodeURIComponent(region)}`
+    );
+    if (res.ok) {
+      const data = (await res.json()) as {
+        feed?: string;
+        videos?: Array<{ videoId: string; title: string; isLive: boolean }>;
+      };
+      if (data.feed === "subscriptions") {
+        const live = data.videos?.find((v) => v.isLive && !active.has(v.videoId));
+        if (live) {
+          return { videoId: live.videoId, title: live.title, fromSubscriptions: true };
+        }
+      }
+    }
+  } catch {
+    // fall through to curated
+  }
+
+  const curated = CURATED_LIVE_STREAMS.find((c) => !active.has(c.videoId));
+  return curated
+    ? { videoId: curated.videoId, title: curated.label, fromSubscriptions: false }
+    : null;
+}
 
 interface StreamPlayerProps {
   stream: StreamItem;
@@ -118,6 +187,10 @@ export const StreamPlayer = React.memo(function StreamPlayer({
   const [reportedQuality, setReportedQuality] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBrowsingYouTube, setIsBrowsingYouTube] = useState(false);
+  const [captionsEnabled, setCaptionsEnabled] = useState(false);
+  const [captionLanguage, setCaptionLanguage] = useState("");
+  const [captionSize, setCaptionSize] = useState(0);
+  const [isLooping, setIsLooping] = useState(false);
 
   const embedDomain = useSyncExternalStore(
     emptySubscribe,
@@ -161,9 +234,20 @@ export const StreamPlayer = React.memo(function StreamPlayer({
   const addBookmark = useStreamStore((s) => s.addBookmark);
   const isDockedInPip = pipVideoId === stream.videoId;
 
+  // Playback features: resume, queue, sleep-timer pause, auto-replace
+  const queue = usePlaybackStore((s) => s.queues[stream.videoId]);
+  const queueLength = queue?.length ?? 0;
+  const pauseAllVersion = usePlaybackStore((s) => s.pauseAllVersion);
+  const autoReplaceEnded = usePlaybackStore((s) => s.autoReplaceEnded);
+  const [autoReplaceIn, setAutoReplaceIn] = useState<number | null>(null);
+  const [twitchReadyVersion, setTwitchReadyVersion] = useState(0);
+
   const platform = getStreamPlatform(stream.videoId);
   const platformMeta = getStreamPlatformMeta(stream.videoId);
   const isYouTube = platform === "youtube";
+  const isTwitch = platform === "twitch";
+  /** Platforms whose player we can control (audio, play/pause) */
+  const hasPlayerControl = isYouTube || isTwitch;
 
   const isFocused = focusedVideoId === stream.videoId;
   const isHalfOptimized = focusedVideoId !== null && !isFocused;
@@ -206,6 +290,30 @@ export const StreamPlayer = React.memo(function StreamPlayer({
   const qualitySettingRef = useRef<YouTubeQualityLevel>(qualitySetting);
   const playbackRateRef = useRef<number>(playbackRate);
   const prevSyncVersionRef = useRef<number>(syncLiveVersion);
+  const captionsRef = useRef({
+    enabled: captionsEnabled,
+    languageCode: captionLanguage,
+    fontSize: captionSize,
+  });
+  const isLoopingRef = useRef<boolean>(isLooping);
+  const lastPlayerStateRef = useRef<number | null>(null);
+  // Live detection: YouTube doesn't always say, so watch whether duration keeps growing
+  const isLiveRef = useRef<boolean | null>(null);
+  const durationSampleRef = useRef<{ d: number; at: number } | null>(null);
+  const lastDurationRef = useRef(0);
+  const watchRecordedRef = useRef(false);
+  // Watch Party: last stable user-facing state + last time sample (for seek detection)
+  const stableStateRef = useRef<"playing" | "paused" | null>(null);
+  const lastSampleRef = useRef<{ t: number; at: number } | null>(null);
+  const resumePendingRef = useRef(true);
+  const lastProgressSaveRef = useRef(0);
+  const stallTimerRef = useRef<number | null>(null);
+  const stallRetriesRef = useRef(0);
+  // Latest-closure handlers called from the long-lived message listener
+  const onVideoEndedRef = useRef<() => void>(() => {});
+  const onStalledRef = useRef<() => void>(() => {});
+  const onStreamErrorRef = useRef<() => void>(() => {});
+  const runAutoReplaceRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     isAudioActiveRef.current = isAudioActive;
@@ -213,6 +321,12 @@ export const StreamPlayer = React.memo(function StreamPlayer({
     effectiveQualityRef.current = effectiveQuality;
     qualitySettingRef.current = qualitySetting;
     playbackRateRef.current = playbackRate;
+    captionsRef.current = {
+      enabled: captionsEnabled,
+      languageCode: captionLanguage,
+      fontSize: captionSize,
+    };
+    isLoopingRef.current = isLooping;
     if (!isAudioActive) {
       hasConfirmedUnmutedRef.current = false;
     }
@@ -222,6 +336,10 @@ export const StreamPlayer = React.memo(function StreamPlayer({
     effectiveQuality,
     qualitySetting,
     playbackRate,
+    captionsEnabled,
+    captionLanguage,
+    captionSize,
+    isLooping,
   ]);
 
   const applyPlayerQualityAndSpeed = useCallback(
@@ -392,13 +510,178 @@ export const StreamPlayer = React.memo(function StreamPlayer({
               muted?: boolean;
               playbackQuality?: string;
               playbackRate?: number;
+              playerState?: number;
+              currentTime?: number;
+              duration?: number;
+              videoData?: { isLive?: boolean };
             };
       };
+
+      const clearStallTimer = () => {
+        if (stallTimerRef.current !== null) {
+          window.clearTimeout(stallTimerRef.current);
+          stallTimerRef.current = null;
+        }
+      };
+
+      const handlePlayerState = (state: number) => {
+        const prev = lastPlayerStateRef.current;
+        if (state === prev) return;
+        lastPlayerStateRef.current = state;
+
+        // Stall recovery: buffering for 15s straight → reconnect (max 3 tries)
+        clearStallTimer();
+        if (state === YT_PLAYER_STATE.BUFFERING) {
+          stallTimerRef.current = window.setTimeout(() => {
+            if (lastPlayerStateRef.current === YT_PLAYER_STATE.BUFFERING) {
+              onStalledRef.current();
+            }
+          }, 15_000);
+          return;
+        }
+
+        if (state === YT_PLAYER_STATE.ENDED) {
+          if (isLoopingRef.current) {
+            sendYouTubeCommand(iframeRef.current, "seekTo", [0, true]);
+            sendYouTubeCommand(iframeRef.current, "playVideo");
+            setIsPaused(false);
+            return;
+          }
+          onVideoEndedRef.current();
+          return;
+        }
+        if (state === YT_PLAYER_STATE.PAUSED) {
+          setIsPaused(true);
+          if (stableStateRef.current !== "paused") {
+            stableStateRef.current = "paused";
+            if (isLiveRef.current === false) {
+              emitLocalPlayback({
+                videoId: stream.videoId,
+                state: "paused",
+                time: lastSampleRef.current?.t ?? 0,
+                at: Date.now(),
+              });
+            }
+          }
+          return;
+        }
+        if (state === YT_PLAYER_STATE.PLAYING) {
+          stallRetriesRef.current = 0;
+          if (stableStateRef.current !== "playing") {
+            const wasPaused = stableStateRef.current === "paused";
+            stableStateRef.current = "playing";
+            // Only a resume from pause is a user action (not the initial autoplay)
+            if (wasPaused && isLiveRef.current === false) {
+              emitLocalPlayback({
+                videoId: stream.videoId,
+                state: "playing",
+                time: lastSampleRef.current?.t ?? 0,
+                at: Date.now(),
+              });
+            }
+          }
+          if (!watchRecordedRef.current) {
+            watchRecordedRef.current = true;
+            usePlaybackStore.getState().recordWatch(stream.videoId, stream.label);
+          }
+          setIsPaused(false);
+          // Captions module only loads once playback has started
+          if (captionsRef.current.enabled) {
+            applyYouTubeCaptions(iframeRef.current, captionsRef.current);
+          }
+        }
+      };
+
+      const handlePlaybackTime = (
+        currentTime: number,
+        reportedDuration: number | undefined,
+        reportedLive: boolean | undefined
+      ) => {
+        const now = Date.now();
+        if (typeof reportedDuration === "number") {
+          lastDurationRef.current = reportedDuration;
+        }
+        const duration = lastDurationRef.current;
+
+        // Decide live vs. regular video once
+        if (isLiveRef.current === null) {
+          if (typeof reportedLive === "boolean") {
+            isLiveRef.current = reportedLive;
+          } else if (duration > 0) {
+            const sample = durationSampleRef.current;
+            if (!sample) {
+              durationSampleRef.current = { d: duration, at: now };
+            } else if (now - sample.at >= 2500) {
+              isLiveRef.current = Math.abs(duration - sample.d) > 1;
+            }
+          }
+        }
+        const isLive = isLiveRef.current === true;
+        setPlayerClock(stream.videoId, { currentTime, duration, isLive });
+
+        // Watch Party: a jump in position that playback can't explain = user seek
+        const last = lastSampleRef.current;
+        lastSampleRef.current = { t: currentTime, at: now };
+        const steadyState =
+          (stableStateRef.current === "playing" &&
+            lastPlayerStateRef.current === YT_PLAYER_STATE.PLAYING) ||
+          (stableStateRef.current === "paused" &&
+            lastPlayerStateRef.current === YT_PLAYER_STATE.PAUSED);
+        if (last && isLiveRef.current === false && stableStateRef.current && steadyState) {
+          const expected =
+            stableStateRef.current === "playing"
+              ? last.t + ((now - last.at) / 1000) * playbackRateRef.current
+              : last.t;
+          if (Math.abs(currentTime - expected) > 3) {
+            emitLocalPlayback({
+              videoId: stream.videoId,
+              state: stableStateRef.current,
+              time: currentTime,
+              at: now,
+            });
+          }
+        }
+
+        if (isLiveRef.current !== false || duration < 60) return;
+
+        // Resume where you left off (only right after the video starts)
+        if (resumePendingRef.current) {
+          resumePendingRef.current = false;
+          const resumeAt = usePlaybackStore
+            .getState()
+            .getResumeTime(stream.videoId);
+          if (resumeAt !== null && currentTime < 20) {
+            suppressLocalPlayback(stream.videoId);
+            sendYouTubeCommand(iframeRef.current, "seekTo", [resumeAt, true]);
+            toast.info(`Resumed "${stream.label}" at ${formatClock(resumeAt)}`, {
+              action: {
+                label: "Start over",
+                onClick: () =>
+                  sendYouTubeCommand(iframeRef.current, "seekTo", [0, true]),
+              },
+            });
+            return;
+          }
+        }
+
+        if (now - lastProgressSaveRef.current >= 5000 && currentTime > 0) {
+          lastProgressSaveRef.current = now;
+          usePlaybackStore
+            .getState()
+            .saveProgress(stream.videoId, Math.floor(currentTime), Math.floor(duration));
+        }
+      };
+
+      if (payload.event === "onStateChange" && typeof payload.info === "number") {
+        handlePlayerState(payload.info);
+        return;
+      }
 
       if (payload.event === "onError") {
         const code = typeof payload.info === "number" ? payload.info : null;
         setErrorCode(code);
         setHasStreamError(true);
+        onStreamErrorRef.current();
         return;
       }
 
@@ -438,6 +721,18 @@ export const StreamPlayer = React.memo(function StreamPlayer({
           setStreamQuality(stream.videoId, payload.info.playbackQuality);
         }
 
+        if (typeof payload.info.playerState === "number") {
+          handlePlayerState(payload.info.playerState);
+        }
+
+        if (typeof payload.info.currentTime === "number") {
+          handlePlaybackTime(
+            payload.info.currentTime,
+            payload.info.duration,
+            payload.info.videoData?.isLive
+          );
+        }
+
         if (typeof payload.info.muted === "boolean") {
           if (payload.info.muted === false) {
             hasConfirmedUnmutedRef.current = true;
@@ -468,10 +763,17 @@ export const StreamPlayer = React.memo(function StreamPlayer({
     };
 
     window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      if (stallTimerRef.current !== null) {
+        window.clearTimeout(stallTimerRef.current);
+        stallTimerRef.current = null;
+      }
+    };
   }, [
     isLoaded,
     isYouTube,
+    stream.label,
     setStreamAudio,
     setStreamQuality,
     stream.videoId,
@@ -479,6 +781,14 @@ export const StreamPlayer = React.memo(function StreamPlayer({
   ]);
 
   const handleIframeLoad = () => {
+    lastPlayerStateRef.current = null;
+    isLiveRef.current = null;
+    durationSampleRef.current = null;
+    lastDurationRef.current = 0;
+    resumePendingRef.current = true;
+    watchRecordedRef.current = false;
+    stableStateRef.current = null;
+    lastSampleRef.current = null;
     setIsLoaded(true);
     setHasStreamError(false);
     setErrorCode(null);
@@ -495,6 +805,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
   };
 
   const handleReloadStream = () => {
+    setAutoReplaceIn(null);
     setHasStreamError(false);
     setErrorCode(null);
     setIsLoaded(false);
@@ -525,6 +836,197 @@ export const StreamPlayer = React.memo(function StreamPlayer({
       toast.error(res.error);
     }
   };
+
+  /** Switch this tile to another video, keeping its "Up next" queue attached. */
+  const swapTileTo = (newId: string, title: string) => {
+    const oldId = stream.videoId;
+    const res = replaceStream(oldId, newId, title);
+    if (res.success && res.videoId) {
+      usePlaybackStore.getState().moveQueue(oldId, res.videoId);
+    }
+    return res;
+  };
+
+  const playNextInQueue = (): boolean => {
+    const active = new Set(
+      useStreamStore.getState().streams.map((s) => s.videoId)
+    );
+    const next = usePlaybackStore
+      .getState()
+      .takeNext(stream.videoId, (id) => !active.has(id));
+    if (!next) return false;
+    const res = replaceStream(stream.videoId, next.videoId, next.title);
+    if (res.success) {
+      toast.success(`Up next: "${next.title}"`);
+      return true;
+    }
+    if (res.error) toast.error(res.error);
+    return false;
+  };
+
+  const runAutoReplace = async () => {
+    const replacement = await findLiveReplacement(stream.videoId);
+    if (!replacement) {
+      toast.info("No other live stream available to replace this one.");
+      return;
+    }
+    const res = swapTileTo(replacement.videoId, replacement.title);
+    if (res.success) {
+      toast.success(`Stream ended — now playing "${replacement.title}"`, {
+        description: replacement.fromSubscriptions
+          ? "Live now from your subscriptions"
+          : "From the curated live list",
+      });
+    }
+  };
+
+  const handleVideoEnded = () => {
+    if (isLiveRef.current === false) {
+      usePlaybackStore.getState().clearProgress(stream.videoId);
+    }
+    if (playNextInQueue()) return;
+    if (isLiveRef.current === true && autoReplaceEnded) {
+      setAutoReplaceIn(10);
+    }
+  };
+
+  const handleStreamError = () => {
+    if (playNextInQueue()) return;
+    if (autoReplaceEnded) setAutoReplaceIn(10);
+  };
+
+  const handleStalled = () => {
+    if (stallRetriesRef.current >= 3) return;
+    stallRetriesRef.current += 1;
+    toast.info(`"${stream.label}" stalled — reconnecting…`);
+    setIsLoaded(false);
+    setReloadKey((k) => k + 1);
+  };
+
+  // Keep listener-facing refs pointing at the latest handlers
+  useEffect(() => {
+    onVideoEndedRef.current = handleVideoEnded;
+    onStalledRef.current = handleStalled;
+    onStreamErrorRef.current = handleStreamError;
+    runAutoReplaceRef.current = runAutoReplace;
+  });
+
+  // Auto-replace countdown (cancellable from the offline slate)
+  useEffect(() => {
+    if (autoReplaceIn === null) return;
+    const id = window.setTimeout(() => {
+      if (autoReplaceIn > 1) {
+        setAutoReplaceIn(autoReplaceIn - 1);
+      } else {
+        setAutoReplaceIn(null);
+        void runAutoReplaceRef.current();
+      }
+    }, 1000);
+    return () => window.clearTimeout(id);
+  }, [autoReplaceIn]);
+
+  // Sleep timer → pause every player
+  const prevPauseAllRef = useRef(pauseAllVersion);
+  useEffect(() => {
+    if (pauseAllVersion === prevPauseAllRef.current) return;
+    prevPauseAllRef.current = pauseAllVersion;
+    if (iframeRef.current && isYouTube) {
+      suppressLocalPlayback(stream.videoId);
+      sendYouTubeCommand(iframeRef.current, "pauseVideo");
+    }
+    twitchPlayerRef.current?.pause();
+  }, [pauseAllVersion, isYouTube, stream.videoId]);
+
+  // ── Twitch: official Embed Player API (mute/volume/play/pause + offline events) ──
+  const twitchHostRef = useRef<HTMLDivElement | null>(null);
+  const twitchPlayerRef = useRef<TwitchPlayer | null>(null);
+  const twitchChannel = isTwitch ? getStreamRawId(stream.videoId) : null;
+
+  useEffect(() => {
+    const host = twitchHostRef.current;
+    if (!twitchChannel || !host || isDockedInPip) return;
+    let disposed = false;
+
+    loadTwitchPlayerApi()
+      .then((Twitch) => {
+        if (disposed || !twitchHostRef.current) return;
+        host.innerHTML = "";
+        const player = new Twitch.Player(host, {
+          channel: twitchChannel,
+          parent: [embedDomain.replace(/:\d+$/, "")],
+          width: "100%",
+          height: "100%",
+          autoplay: true,
+          muted: true,
+        });
+        twitchPlayerRef.current = player;
+
+        player.addEventListener(Twitch.Player.READY, () => {
+          setIsLoaded(true);
+          setHasStreamError(false);
+          setTwitchReadyVersion((v) => v + 1);
+        });
+        player.addEventListener(Twitch.Player.PLAYING, () => setIsPaused(false));
+        player.addEventListener(Twitch.Player.PAUSE, () => setIsPaused(true));
+        player.addEventListener(Twitch.Player.ONLINE, () => {
+          setHasStreamError(false);
+          setErrorCode(null);
+        });
+        player.addEventListener(Twitch.Player.OFFLINE, () => {
+          setHasStreamError(true);
+          onStreamErrorRef.current();
+        });
+        player.addEventListener(Twitch.Player.ENDED, () => {
+          isLiveRef.current = true;
+          onVideoEndedRef.current();
+        });
+      })
+      .catch(() => {
+        // Script blocked (e.g. by an extension) → show the offline slate with retry
+        if (!disposed) {
+          setIsLoaded(true);
+          setHasStreamError(true);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      twitchPlayerRef.current = null;
+      host.innerHTML = "";
+    };
+  }, [twitchChannel, reloadKey, isDockedInPip, embedDomain]);
+
+  // Twitch audio follows the same Solo / mute / volume model as YouTube
+  useEffect(() => {
+    const player = twitchPlayerRef.current;
+    if (!player) return;
+    const audible = isAudioActive && effectiveVolume > 0;
+    player.setMuted(!audible);
+    if (audible) player.setVolume(Math.min(1, effectiveVolume / 100));
+  }, [isAudioActive, effectiveVolume, muteSyncVersion, twitchReadyVersion]);
+
+  // Watch Party: follow play / pause / seek from other viewers (regular videos)
+  useEffect(() => {
+    if (!isYouTube) return;
+    return onRemotePlayback(stream.videoId, (ev) => {
+      const iframe = iframeRef.current;
+      if (!iframe || isLiveRef.current === true) return;
+      const target =
+        ev.time +
+        (ev.state === "playing" ? Math.max(0, (Date.now() - ev.at) / 1000) : 0);
+      const current = lastSampleRef.current?.t;
+      if (current === undefined || Math.abs(current - target) > 2) {
+        sendYouTubeCommand(iframe, "seekTo", [target, true]);
+      }
+      sendYouTubeCommand(iframe, ev.state === "playing" ? "playVideo" : "pauseVideo");
+    });
+  }, [isYouTube, stream.videoId]);
+
+  // Drop this tile's clock when it leaves the grid
+  useEffect(() => {
+    const id = stream.videoId;
+    return () => clearPlayerClock(id);
+  }, [stream.videoId]);
 
   const handlePlaybackRateChange = (nextRate: number) => {
     setPlaybackRate(nextRate);
@@ -589,7 +1091,70 @@ export const StreamPlayer = React.memo(function StreamPlayer({
     toast.info(`Reset "${stream.label}" to Auto (720p60) • Normal`);
   };
 
+  const updateCaptions = (
+    next: Partial<{ enabled: boolean; languageCode: string; fontSize: number }>
+  ) => {
+    const merged = {
+      enabled: next.enabled ?? captionsEnabled,
+      languageCode: next.languageCode ?? captionLanguage,
+      fontSize: next.fontSize ?? captionSize,
+    };
+    setCaptionsEnabled(merged.enabled);
+    setCaptionLanguage(merged.languageCode);
+    setCaptionSize(merged.fontSize);
+    captionsRef.current = merged;
+    if (iframeRef.current && isYouTube) {
+      applyYouTubeCaptions(iframeRef.current, merged);
+    }
+    return merged;
+  };
+
+  const handleToggleCaptions = () => {
+    const merged = updateCaptions({ enabled: !captionsEnabled });
+    toast.info(
+      merged.enabled
+        ? `Captions on for "${stream.label}"`
+        : `Captions off for "${stream.label}"`,
+      merged.enabled
+        ? { description: "Shown when the video provides a caption track." }
+        : undefined
+    );
+  };
+
+  const handleToggleLoop = () => {
+    const next = !isLooping;
+    setIsLooping(next);
+    isLoopingRef.current = next;
+    toast.info(next ? `Loop on for "${stream.label}"` : "Loop off");
+  };
+
+  /** Copies a share link; regular YouTube videos include the current moment (&t=). */
+  const handleCopyMomentLink = async () => {
+    let url = getStreamExternalUrl(stream.videoId);
+    let label = "Link copied";
+    const clock = isYouTube ? getPlayerClock(stream.videoId) : undefined;
+    if (clock && !clock.isLive && clock.currentTime >= 1) {
+      const t = Math.floor(clock.currentTime);
+      url = `https://youtu.be/${encodeURIComponent(stream.videoId)}?t=${t}`;
+      label = `Link copied at ${formatClock(t)}`;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(label, { description: url });
+    } catch {
+      toast.error("Couldn't access the clipboard", { description: url });
+    }
+  };
+
   const handleTogglePlayPause = () => {
+    if (isTwitch) {
+      const player = twitchPlayerRef.current;
+      if (!player) return;
+      if (isPaused) player.play();
+      else player.pause();
+      setIsPaused(!isPaused);
+      return;
+    }
     if (!iframeRef.current || !isYouTube) return;
     if (isPaused) {
       sendYouTubeCommand(iframeRef.current, "playVideo");
@@ -650,14 +1215,22 @@ export const StreamPlayer = React.memo(function StreamPlayer({
 
   if (isBrowsingYouTube) {
     return (
-      <div className="relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-zinc-800 bg-[#0f0f0f]">
+      <div className="relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-[#0f0f0f]">
         <YoutubeFeedSlot
           slotIndex={index}
           onClose={() => setIsBrowsingYouTube(false)}
           onSelectVideo={(newId, newTitle) => {
-            replaceStream(stream.videoId, newId, newTitle);
+            const res = swapTileTo(newId, newTitle);
             setIsBrowsingYouTube(false);
-            toast.success(`Switched to "${newTitle}"`);
+            if (res.success) toast.success(`Switched to "${newTitle}"`);
+            else if (res.error) toast.error(res.error);
+          }}
+          onQueueVideo={(newId, newTitle) => {
+            const added = usePlaybackStore
+              .getState()
+              .enqueue(stream.videoId, { videoId: newId, title: newTitle });
+            if (added) toast.success(`Added to Up next: "${newTitle}"`);
+            else toast.info("Already in this tile's queue");
           }}
         />
       </div>
@@ -679,7 +1252,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
         }
       }}
       className={cn(
-        "group/tile relative flex h-full w-full flex-col overflow-hidden rounded-xl border bg-zinc-950 transition-all duration-200",
+        "group/tile @container relative flex h-full w-full flex-col overflow-hidden rounded-xl border bg-zinc-950 transition-all duration-200",
         isDragging && "scale-[0.98] opacity-55 ring-2 ring-sky-500/50",
         isDragOver &&
           "border-sky-400 ring-2 ring-sky-400 shadow-xl shadow-sky-500/20",
@@ -776,6 +1349,19 @@ export const StreamPlayer = React.memo(function StreamPlayer({
             {isEcoForced && <Leaf className="mr-1 size-2.5 text-amber-400" />}
             {qualitySummaryLabel}
             {playbackRate !== 1 ? ` • ${speedSummaryLabel}` : ""}
+          </Badge>
+        )}
+
+        {isYouTube && (captionsEnabled || isLooping) && (
+          <Badge
+            variant="secondary"
+            className="gap-1 border-white/10 bg-black/70 px-2 py-0.5 font-mono text-[10px] font-medium text-zinc-300 backdrop-blur-md"
+          >
+            {captionsEnabled && <Captions className="size-2.5 text-emerald-400" />}
+            {captionsEnabled && "CC"}
+            {captionsEnabled && isLooping && " • "}
+            {isLooping && <Repeat className="size-2.5 text-emerald-400" />}
+            {isLooping && "LOOP"}
           </Badge>
         )}
 
@@ -888,7 +1474,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
         {/* Right: Streamlined Control Bar (Essential Quick Actions + Organized Menu) */}
         <div className="flex shrink-0 items-center gap-1">
           {/* 1. Solo Focus + Independent Audio Mute/Unmute + Volume Slider */}
-          {isYouTube && (
+          {hasPlayerControl && (
             <div className="flex items-center rounded-md bg-zinc-900/90 p-0.5 ring-1 ring-white/10 backdrop-blur-md">
               <Tooltip>
                 <TooltipTrigger
@@ -1025,7 +1611,66 @@ export const StreamPlayer = React.memo(function StreamPlayer({
             </Tooltip>
           )}
 
-          {/* 3. Live Chat Focus */}
+          {/* 3. Closed Captions + Loop quick toggles */}
+          {isYouTube && (
+            <>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="secondary"
+                      onClick={handleToggleCaptions}
+                      aria-pressed={captionsEnabled}
+                      aria-label={captionsEnabled ? "Turn captions off" : "Turn captions on"}
+                      className={cn(
+                        "hidden bg-zinc-900/90 text-zinc-300 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-white @sm:inline-flex",
+                        captionsEnabled &&
+                          "bg-emerald-500/20 text-emerald-300 ring-emerald-500/40"
+                      )}
+                    />
+                  }
+                >
+                  {captionsEnabled ? (
+                    <Captions className="size-3.5" />
+                  ) : (
+                    <CaptionsOff className="size-3.5" />
+                  )}
+                </TooltipTrigger>
+                <TooltipContent>
+                  {captionsEnabled ? "Captions on (CC)" : "Turn on captions (CC)"}
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="secondary"
+                      onClick={handleToggleLoop}
+                      aria-pressed={isLooping}
+                      aria-label={isLooping ? "Turn loop off" : "Turn loop on"}
+                      className={cn(
+                        "hidden bg-zinc-900/90 text-zinc-300 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-white @sm:inline-flex",
+                        isLooping &&
+                          "bg-emerald-500/20 text-emerald-300 ring-emerald-500/40"
+                      )}
+                    />
+                  }
+                >
+                  <Repeat className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isLooping ? "Loop on — replays when the video ends" : "Loop this video"}
+                </TooltipContent>
+              </Tooltip>
+            </>
+          )}
+
+          {/* 4. Live Chat Focus */}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1077,6 +1722,8 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                     <MoreHorizontal className="size-3.5" />
                     {(qualitySetting !== "auto" ||
                       playbackRate !== 1 ||
+                      captionsEnabled ||
+                      isLooping ||
                       isDockedInPip) && (
                       <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-emerald-400" />
                     )}
@@ -1097,7 +1744,7 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                   Playback & Feed
                 </DropdownMenuLabel>
 
-                {isYouTube && (
+                {hasPlayerControl && (
                   <DropdownMenuItem
                     onClick={handleTogglePlayPause}
                     className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
@@ -1152,8 +1799,76 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                   className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
                 >
                   <Radio className="size-3.5 text-red-400" />
-                  <span>Browse & Switch Feed</span>
+                  <span>Browse, Switch or Queue</span>
                 </DropdownMenuItem>
+
+                {/* Up next queue */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="cursor-pointer rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white data-open:bg-white/10 data-open:text-white">
+                    <ListVideo className="size-3.5 text-zinc-300" />
+                    <span>Up next</span>
+                    <span
+                      className={cn(
+                        "ml-auto pr-1 font-mono text-xs",
+                        queueLength ? "text-emerald-400" : "text-zinc-500"
+                      )}
+                    >
+                      {queueLength}
+                    </span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-64 rounded-xl border border-white/15 bg-zinc-900/95 p-1 text-zinc-100 shadow-2xl backdrop-blur-xl">
+                    {queueLength === 0 ? (
+                      <div className="px-2.5 py-2 text-xs text-zinc-400">
+                        Queue is empty. Use{" "}
+                        <span className="text-zinc-200">Browse, Switch or Queue</span>{" "}
+                        and press <span className="text-zinc-200">+ Queue</span> on a
+                        video.
+                      </div>
+                    ) : (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => playNextInQueue()}
+                          className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-300 focus:bg-emerald-500/15 focus:text-emerald-200"
+                        >
+                          <SkipForward className="size-3.5" />
+                          <span>Play next now</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="my-1 bg-white/10" />
+                        {queue?.map((item, i) => (
+                          <DropdownMenuItem
+                            key={item.videoId}
+                            closeOnClick={false}
+                            onClick={() =>
+                              usePlaybackStore
+                                .getState()
+                                .dequeueAt(stream.videoId, i)
+                            }
+                            title="Remove from queue"
+                            className="group/q cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
+                          >
+                            <span className="w-4 shrink-0 font-mono text-[10px] text-zinc-500">
+                              {i + 1}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">
+                              {item.title}
+                            </span>
+                            <X className="size-3 shrink-0 text-zinc-500 group-hover/q:text-red-400" />
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator className="my-1 bg-white/10" />
+                        <DropdownMenuItem
+                          onClick={() =>
+                            usePlaybackStore.getState().clearQueue(stream.videoId)
+                          }
+                          className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-red-300 focus:bg-red-500/15 focus:text-red-200"
+                        >
+                          <Trash2 className="size-3.5" />
+                          <span>Clear queue</span>
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuGroup>
 
               <DropdownMenuSeparator className="my-1 bg-white/10" />
@@ -1300,6 +2015,136 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
 
+                  </DropdownMenuGroup>
+
+                  <DropdownMenuSeparator className="my-1 bg-white/10" />
+
+                  {/* Captions & Loop */}
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+                      Captions & Loop
+                    </DropdownMenuLabel>
+
+                    <DropdownMenuItem
+                      closeOnClick={false}
+                      onClick={handleToggleCaptions}
+                      className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
+                    >
+                      {captionsEnabled ? (
+                        <Captions className="size-3.5 text-emerald-400" />
+                      ) : (
+                        <CaptionsOff className="size-3.5 text-zinc-300" />
+                      )}
+                      <span>Captions (CC)</span>
+                      <span
+                        className={cn(
+                          "ml-auto pr-1 text-xs",
+                          captionsEnabled ? "text-emerald-400" : "text-zinc-500"
+                        )}
+                      >
+                        {captionsEnabled ? "On" : "Off"}
+                      </span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="cursor-pointer rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white data-open:bg-white/10 data-open:text-white">
+                        <Languages className="size-3.5 text-zinc-300" />
+                        <span>Caption language</span>
+                        <span className="ml-auto max-w-[80px] truncate pr-1 text-xs text-zinc-400">
+                          {YOUTUBE_CAPTION_LANGUAGES.find(
+                            (l) => l.value === captionLanguage
+                          )?.label ?? "Default"}
+                        </span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-52 rounded-xl border border-white/15 bg-zinc-900/95 p-1 text-zinc-100 shadow-2xl backdrop-blur-xl">
+                        <DropdownMenuRadioGroup
+                          value={captionLanguage}
+                          onValueChange={(value) => {
+                            const lang = String(value);
+                            updateCaptions({ enabled: true, languageCode: lang });
+                            toast.info(
+                              `Captions: ${
+                                YOUTUBE_CAPTION_LANGUAGES.find((l) => l.value === lang)
+                                  ?.label ?? lang
+                              }`,
+                              {
+                                description:
+                                  "Applies only if the video has a track in this language.",
+                              }
+                            );
+                          }}
+                        >
+                          {YOUTUBE_CAPTION_LANGUAGES.map((option) => (
+                            <DropdownMenuRadioItem
+                              key={option.value || "default"}
+                              value={option.value}
+                              className="cursor-pointer rounded-lg py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white"
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="cursor-pointer rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white data-open:bg-white/10 data-open:text-white">
+                        <Type className="size-3.5 text-zinc-300" />
+                        <span>Caption size</span>
+                        <span className="ml-auto pr-1 text-xs text-zinc-400">
+                          {YOUTUBE_CAPTION_SIZES.find((s) => s.value === captionSize)
+                            ?.label ?? "Normal"}
+                        </span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-40 rounded-xl border border-white/15 bg-zinc-900/95 p-1 text-zinc-100 shadow-2xl backdrop-blur-xl">
+                        <DropdownMenuRadioGroup
+                          value={String(captionSize)}
+                          onValueChange={(value) => {
+                            const size = Number(value);
+                            if (!Number.isNaN(size)) {
+                              updateCaptions({ enabled: true, fontSize: size });
+                            }
+                          }}
+                        >
+                          {YOUTUBE_CAPTION_SIZES.map((option) => (
+                            <DropdownMenuRadioItem
+                              key={option.value}
+                              value={String(option.value)}
+                              className="cursor-pointer rounded-lg py-1.5 text-xs text-zinc-100 focus:bg-white/10 focus:text-white"
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+
+                    <DropdownMenuItem
+                      closeOnClick={false}
+                      onClick={handleToggleLoop}
+                      className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
+                    >
+                      <Repeat
+                        className={cn(
+                          "size-3.5",
+                          isLooping ? "text-emerald-400" : "text-zinc-300"
+                        )}
+                      />
+                      <span>Loop video</span>
+                      <span
+                        className={cn(
+                          "ml-auto pr-1 text-xs",
+                          isLooping ? "text-emerald-400" : "text-zinc-500"
+                        )}
+                      >
+                        {isLooping ? "On" : "Off"}
+                      </span>
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+
+                  <DropdownMenuSeparator className="my-1 bg-white/10" />
+
+                  <DropdownMenuGroup>
                     <DropdownMenuItem
                       onClick={handleOptimizeHalfPreset}
                       className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-amber-300 focus:bg-amber-500/15 focus:text-amber-200"
@@ -1343,6 +2188,16 @@ export const StreamPlayer = React.memo(function StreamPlayer({
                 >
                   <Bookmark className="size-3.5 text-amber-400" />
                   <span>Bookmark Timestamp</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  onClick={() => void handleCopyMomentLink()}
+                  className="cursor-pointer gap-2 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:bg-white/10 focus:text-white"
+                >
+                  <Link2 className="size-3.5 text-sky-400" />
+                  <span>
+                    {isYouTube ? "Copy link at current time" : "Copy stream link"}
+                  </span>
                 </DropdownMenuItem>
 
                 <DropdownMenuItem
@@ -1412,6 +2267,19 @@ export const StreamPlayer = React.memo(function StreamPlayer({
               This stream may have ended, gone offline, or restricted embedding.
             </p>
           </div>
+          {autoReplaceIn !== null && (
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200">
+              <RefreshCw className="size-3 animate-spin" />
+              <span>Switching to another live stream in {autoReplaceIn}s</span>
+              <button
+                type="button"
+                onClick={() => setAutoReplaceIn(null)}
+                className="font-semibold text-emerald-300 underline-offset-2 hover:underline"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-center gap-2">
             <Button
               type="button"
@@ -1432,6 +2300,38 @@ export const StreamPlayer = React.memo(function StreamPlayer({
               Swap Curated Live Feed
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* Live broadcast ended normally → cancellable auto-replace banner */}
+      {!isDockedInPip && !hasStreamError && autoReplaceIn !== null && (
+        <div className="absolute inset-x-3 bottom-3 z-30 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/30 bg-zinc-950/90 px-3 py-2 text-xs text-zinc-100 shadow-xl backdrop-blur-md">
+          <span className="flex items-center gap-2">
+            <Radio className="size-3.5 text-emerald-400" />
+            Broadcast ended — switching to another live stream in {autoReplaceIn}s
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="xs"
+              onClick={() => {
+                setAutoReplaceIn(null);
+                void runAutoReplace();
+              }}
+              className="h-6 rounded-md bg-emerald-600 px-2 text-[11px] font-semibold text-white hover:bg-emerald-500"
+            >
+              Switch now
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => setAutoReplaceIn(null)}
+              className="h-6 rounded-md px-2 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+            >
+              Cancel
+            </Button>
+          </span>
         </div>
       )}
 
@@ -1463,8 +2363,18 @@ export const StreamPlayer = React.memo(function StreamPlayer({
             Return to Grid Slot
           </Button>
         </div>
+      ) : isTwitch ? (
+        /* Twitch Embed Player API mounts its own iframe here */
+        <div
+          key={`${stream.videoId}-${reloadKey}`}
+          ref={twitchHostRef}
+          className={cn(
+            "h-full w-full flex-1 bg-black [&_iframe]:h-full [&_iframe]:w-full [&_iframe]:border-0",
+            (anyTileDragging || isSplitterDragging) && "pointer-events-none"
+          )}
+        />
       ) : (
-        /* Multi-Platform Player Embed */
+        /* YouTube / Kick Player Embed */
         <iframe
           key={`${stream.videoId}-${reloadKey}`}
           ref={iframeRef}

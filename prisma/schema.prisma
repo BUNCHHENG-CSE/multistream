@@ -80,3 +80,61 @@ model SavedLayout {
 
   @@map("saved_layouts")
 }
+
+// ── Watch Party (shared rooms; replaces the old in-memory store) ──
+
+model PartyRoom {
+  roomCode     String          @id @map("room_code")
+  gridPreset   String          @default("2x2") @map("grid_preset")
+  streams      Json            @default("[]")
+  updatedAt    DateTime?       @map("updated_at") @db.Timestamptz(6)
+  updatedBy    String          @default("") @map("updated_by")
+  syncLiveAt   DateTime?       @map("sync_live_at") @db.Timestamptz(6)
+  syncLiveBy   String          @default("") @map("sync_live_by")
+  lastActiveAt DateTime        @default(now()) @map("last_active_at") @db.Timestamptz(6)
+  /// Latest synced playback per video: { [videoId]: { state, time, at, by } }
+  playback     Json            @default("{}")
+  peers        PartyPeer[]
+  reactions    PartyReaction[]
+  messages     PartyMessage[]
+
+  @@index([lastActiveAt])
+  @@map("party_rooms")
+}
+
+model PartyPeer {
+  roomCode   String    @map("room_code")
+  clientId   String    @map("client_id")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  room       PartyRoom @relation(fields: [roomCode], references: [roomCode], onDelete: Cascade)
+
+  @@id([roomCode, clientId])
+  @@index([roomCode, lastSeenAt])
+  @@map("party_peers")
+}
+
+model PartyReaction {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roomCode  String    @map("room_code")
+  clientId  String    @map("client_id")
+  emoji     String
+  sender    String?
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  room      PartyRoom @relation(fields: [roomCode], references: [roomCode], onDelete: Cascade)
+
+  @@index([roomCode, createdAt])
+  @@map("party_reactions")
+}
+
+model PartyMessage {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roomCode  String    @map("room_code")
+  clientId  String    @map("client_id")
+  sender    String
+  text      String
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  room      PartyRoom @relation(fields: [roomCode], references: [roomCode], onDelete: Cascade)
+
+  @@index([roomCode, createdAt])
+  @@map("party_messages")
+}

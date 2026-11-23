@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStreamStore } from "@/store/useStreamStore";
+import { getStreamPlatform } from "@/lib/youtube";
 
 export function BookmarksDialog() {
   const isOpen = useStreamStore((s) => s.isBookmarksOpen);
@@ -69,7 +70,10 @@ export function BookmarksDialog() {
       `# TCT MultiStream Broadcast Notes`,
       "",
       ...bookmarks.map(
-        (b) => `- **[${b.elapsedLabel}]** (${b.streamLabel}) — ${b.note}`
+        (b) =>
+          b.videoTimeSec !== undefined && getStreamPlatform(b.videoId) === "youtube"
+            ? `- **[${b.elapsedLabel}](https://www.youtube.com/watch?v=${b.videoId}&t=${b.videoTimeSec}s)** (${b.streamLabel}) — ${b.note}`
+            : `- **[${b.elapsedLabel}]** (${b.streamLabel}) — ${b.note}`
       ),
     ];
     await navigator.clipboard.writeText(lines.join("\n"));
@@ -201,12 +205,28 @@ export function BookmarksDialog() {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge
-                        variant="secondary"
-                        className="bg-amber-500/15 px-1.5 py-0 font-mono text-[10px] font-bold text-amber-700 dark:text-amber-300"
-                      >
-                        {item.elapsedLabel}
-                      </Badge>
+                      {item.videoTimeSec !== undefined &&
+                      getStreamPlatform(item.videoId) === "youtube" ? (
+                        <a
+                          href={`https://www.youtube.com/watch?v=${encodeURIComponent(
+                            item.videoId
+                          )}&t=${item.videoTimeSec}s`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open on YouTube at this moment"
+                          className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0 font-mono text-[10px] font-bold text-amber-700 underline-offset-2 hover:underline dark:text-amber-300"
+                        >
+                          ▶ {item.elapsedLabel}
+                        </a>
+                      ) : (
+                        <Badge
+                          variant="secondary"
+                          title="Session time (live stream)"
+                          className="bg-amber-500/15 px-1.5 py-0 font-mono text-[10px] font-bold text-amber-700 dark:text-amber-300"
+                        >
+                          {item.elapsedLabel}
+                        </Badge>
+                      )}
                       <span className="inline-flex items-center gap-1 truncate text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
                         <Tv className="size-3 shrink-0" />
                         <span className="truncate">{item.streamLabel}</span>

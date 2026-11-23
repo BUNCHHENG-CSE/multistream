@@ -283,3 +283,25 @@
 .dark .no-scrollbar::-webkit-scrollbar-corner {
   display: none !important;
 }
+
+/* Fullscreen auto-hide: the top bar overlays the grid and fades out when idle.
+   Hovering the top edge (or any mouse/keyboard activity) brings it back. */
+html[data-fullscreen="true"] [data-app-header] {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 60;
+  transition: opacity 250ms ease, transform 250ms ease;
+}
+html[data-fullscreen="true"][data-idle="true"] [data-app-header]:not(:hover):not(:focus-within) {
+  opacity: 0;
+  transform: translateY(-60%);
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-fullscreen="true"] [data-app-header] {
+    transition: opacity 150ms linear;
+  }
+  html[data-fullscreen="true"][data-idle="true"] [data-app-header]:not(:hover):not(:focus-within) {
+    transform: none;
+  }
+}
